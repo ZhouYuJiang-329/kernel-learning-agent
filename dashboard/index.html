@@ -1,0 +1,3428 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kernel Learning Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/marked@9/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<style>
+  :root {
+    --bg: #f7f8fa;
+    --surface: #ffffff;
+    --surface-subtle: #f2f4f7;
+    --surface-raised: #ffffff;
+    --border: #d8dee7;
+    --border-subtle: #e9edf3;
+    --text: #1b1f24;
+    --muted: #687180;
+    --faint: #8a94a3;
+    --mastered: #16833a; --exploring: #a15c00; --unknown: #8a94a3; --questioned: #c9252d;
+    --critical: #c9252d; --medium: #a15c00; --low: #2563eb;
+    --accent: #2563eb;
+    --accent-soft: rgba(37,99,235,.08);
+    --shadow-sm: 0 1px 2px rgba(16,24,40,.05);
+    --shadow-md: 0 10px 24px rgba(16,24,40,.10);
+    --radius: 8px;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: Inter, "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+
+  header {
+    position: sticky;
+    top: 0;
+    z-index: 30;
+    padding: 14px 28px;
+    border-bottom: 1px solid var(--border);
+    background: rgba(255,255,255,.92);
+    backdrop-filter: blur(12px);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  header h1 { font-size: 16px; font-weight: 650; letter-spacing: 0; }
+  #last-updated { margin-left: auto; color: var(--faint); font-size: 12px; white-space: nowrap; }
+  .live-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--mastered);
+    box-shadow: 0 0 0 4px rgba(22,131,58,.10);
+    animation: pulse 2s infinite;
+  }
+  @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:.4; } }
+
+  .tabs {
+    position: sticky;
+    top: 49px;
+    z-index: 25;
+    display: flex;
+    padding: 10px 28px;
+    border-bottom: 1px solid var(--border);
+    gap: 6px;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    background: rgba(247,248,250,.94);
+    backdrop-filter: blur(12px);
+    scrollbar-width: thin;
+  }
+  .tab {
+    padding: 6px 12px;
+    cursor: pointer;
+    color: var(--muted);
+    border: 1px solid transparent;
+    border-radius: 999px;
+    font-size: 13px;
+    white-space: nowrap;
+    transition: color .15s, background .15s, border-color .15s;
+  }
+  .tab.active {
+    color: var(--accent);
+    border-color: rgba(37,99,235,.22);
+    background: var(--accent-soft);
+  }
+  .tab:hover:not(.active) { color: var(--text); background: var(--surface-subtle); }
+
+  .panel { display: none; padding: 24px 28px 40px; max-width: 1480px; margin: 0 auto; }
+  .panel.active { display: block; }
+
+  /* ── 统计卡片 ── */
+  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 12px; margin-bottom: 18px; }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px;
+    box-shadow: var(--shadow-sm);
+  }
+  .card-title { color: var(--faint); font-size: 11px; text-transform: uppercase; letter-spacing: .04em; margin-bottom: 8px; font-weight: 650; }
+  .card-value { font-size: 30px; line-height: 1.1; font-weight: 720; letter-spacing: 0; }
+  .card-sub { color: var(--muted); font-size: 12px; margin-top: 6px; }
+  .overview-focus-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1.35fr) minmax(280px, .65fr);
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+  .focus-card {
+    min-width: 0;
+    background: #f8fbff;
+    border: 1px solid rgba(37,99,235,.20);
+    border-radius: var(--radius);
+    padding: 18px 20px;
+    box-shadow: var(--shadow-sm);
+  }
+  .focus-label, .overview-section-title {
+    color: var(--faint);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+  }
+  .focus-title {
+    margin-top: 6px;
+    font-size: 22px;
+    line-height: 1.25;
+    font-weight: 760;
+    overflow-wrap: anywhere;
+  }
+  .focus-body {
+    margin-top: 8px;
+    color: var(--muted);
+    font-size: 14px;
+    line-height: 1.7;
+    overflow-wrap: anywhere;
+  }
+  .focus-details {
+    margin-top: 10px;
+    color: var(--muted);
+    font-size: 12px;
+  }
+  .focus-details summary {
+    cursor: pointer;
+    color: var(--accent);
+    font-weight: 650;
+  }
+  .focus-details-body {
+    margin-top: 8px;
+    max-height: 180px;
+    overflow: auto;
+    border-top: 1px solid rgba(37,99,235,.14);
+    padding-top: 8px;
+    line-height: 1.7;
+    overflow-wrap: anywhere;
+  }
+  .attention-card {
+    min-width: 0;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px;
+    box-shadow: var(--shadow-sm);
+  }
+  .attention-title {
+    margin-top: 6px;
+    font-size: 17px;
+    font-weight: 720;
+    overflow-wrap: anywhere;
+  }
+  .attention-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+    margin-top: 16px;
+  }
+  .attention-stat {
+    min-width: 0;
+    background: var(--surface-subtle);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 10px;
+  }
+  .attention-stat-value {
+    font-size: 22px;
+    line-height: 1;
+    font-weight: 720;
+  }
+  .attention-stat-label {
+    margin-top: 6px;
+    color: var(--muted);
+    font-size: 11px;
+    overflow-wrap: anywhere;
+  }
+  .overview-metrics {
+    margin-bottom: 22px;
+  }
+  .progress-block-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 12px;
+    margin: 10px 0 22px;
+  }
+  .progress-block {
+    min-width: 0;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px;
+    box-shadow: var(--shadow-sm);
+  }
+  .progress-block-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 10px;
+  }
+  .progress-block-name {
+    min-width: 0;
+    font-weight: 650;
+    overflow-wrap: anywhere;
+  }
+  .progress-status {
+    flex: 0 0 auto;
+    color: var(--accent);
+    background: var(--accent-soft);
+    border-radius: var(--radius);
+    padding: 3px 7px;
+    font-size: 11px;
+    font-weight: 650;
+    white-space: nowrap;
+  }
+  .progress-block-meta {
+    display: flex;
+    gap: 12px;
+    color: var(--muted);
+    font-size: 11px;
+    flex-wrap: wrap;
+  }
+
+  /* ── 子系统进度 ── */
+  .sys-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 12px; margin-bottom: 20px; }
+  .sys-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; box-shadow: var(--shadow-sm); }
+  .sys-name { font-weight: 600; margin-bottom: 10px; }
+  .prog-bar { height: 6px; border-radius: 999px; background: var(--surface-subtle); overflow: hidden; display: flex; margin-bottom: 8px; }
+  .prog-seg { height: 100%; transition: width .4s ease; }
+  .prog-labels { display: flex; gap: 12px; font-size: 11px; color: var(--muted); flex-wrap: wrap; }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 3px; }
+
+  /* ── 知识图谱 ── */
+  #graph-container { background: #fbfcfe; border: 1px solid var(--border); border-radius: var(--radius); height: calc(100vh - 190px); min-height: 460px; position: relative; overflow: hidden; box-shadow: var(--shadow-sm); }
+  #graph-svg { width: 100%; height: 100%; }
+  .node circle, .node path { stroke: var(--border); stroke-width: 1.5px; cursor: pointer; }
+  .node text { fill: var(--text); font-size: 11px; pointer-events: none; }
+  .link { stroke: var(--border); stroke-opacity: .5; }
+  .link-calls { stroke: #0969da; stroke-opacity: .5; stroke-width: 1.5px; }
+  .link-unknown { stroke: #8c959f; stroke-opacity: .3; stroke-width: 1px; stroke-dasharray: 4,3; }
+  .reading-order { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; margin-top: 14px; max-height: 360px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--border) transparent; box-shadow: var(--shadow-sm); }
+  .reading-order h4 { font-size: 12px; font-weight: 650; color: var(--faint); text-transform: uppercase; letter-spacing: .04em; margin-bottom: 10px; }
+  .ro-item { display: flex; align-items: baseline; gap: 8px; padding: 5px 0; border-bottom: 1px solid var(--border); font-size: 12px; }
+  .ro-item:last-child { border-bottom: none; }
+  .ro-num { color: var(--muted); font-size: 11px; min-width: 20px; }
+  .ro-name { font-family: var(--mono); font-size: 12px; min-width: 180px; }
+  .ro-reason { color: var(--muted); flex: 1; }
+  .graph-legend { position: absolute; bottom: 12px; left: 12px; display: flex; gap: 10px; background: rgba(255,255,255,.92); padding: 7px 10px; border-radius: 6px; border: 1px solid var(--border); box-shadow: var(--shadow-sm); backdrop-filter: blur(8px); flex-wrap: wrap; max-width: calc(100% - 24px); }
+  .graph-legend span { font-size: 11px; color: var(--muted); }
+
+  /* ── 图谱搜索 ── */
+  .graph-search-box { position: relative; min-width: 240px; margin-left: auto; }
+  #graph-search-input { width: 100%; padding: 5px 12px; border: 1px solid var(--border); border-radius: 20px;
+    background: var(--surface); color: var(--text); font-size: 12px; font-family: var(--mono); outline: none; }
+  #graph-search-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(37,99,235,.10); }
+  .search-suggestions { position: absolute; top: 32px; left: 0; right: 0; background: var(--surface-raised);
+    border: 1px solid var(--border); border-radius: 6px; max-height: 220px; overflow-y: auto;
+    z-index: 20; display: none; box-shadow: var(--shadow-md); }
+  .search-suggestions.show { display: block; }
+  .search-item { padding: 6px 10px; font-size: 12px; font-family: var(--mono); cursor: pointer;
+    display: flex; justify-content: space-between; gap: 8px; }
+  .search-item:hover { background: var(--surface); }
+  .search-item .si-status { font-size: 10px; color: var(--muted); flex-shrink: 0; }
+  .search-empty { padding: 8px 10px; font-size: 12px; color: var(--muted); }
+  .node.search-hit circle, .node.search-hit path {
+    stroke: #e3b341 !important; stroke-width: 3px !important;
+    animation: search-pulse 1s ease-in-out infinite;
+  }
+  @keyframes search-pulse {
+    0%, 100% { filter: drop-shadow(0 0 0 rgba(227,179,65,0)); }
+    50% { filter: drop-shadow(0 0 8px rgba(227,179,65,.9)); }
+  }
+
+  /* ── 子系统筛选 / 聚焦模式 ── */
+  #graph-subsys-filter, #graph-ego-control { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; min-height: 0; }
+  #graph-ego-control:not(:empty) { padding: 8px 10px; background: var(--accent-soft); border: 1px solid rgba(37,99,235,.16); border-radius: 6px; }
+
+  /* ── 节点列表 ── */
+  .filter-bar { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; align-items: center; }
+  .filter-btn { padding: 5px 12px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface); color: var(--muted); cursor: pointer; font-size: 12px; transition: all .15s; }
+  .filter-btn:hover { border-color: #c7d0dd; color: var(--text); background: var(--surface-subtle); }
+  .filter-btn.active { border-color: rgba(37,99,235,.26); color: var(--accent); background: var(--accent-soft); }
+  .node-table { width: 100%; border-collapse: collapse; }
+  .node-table th { text-align: left; padding: 9px 12px; color: var(--faint); font-size: 11px; text-transform: uppercase; letter-spacing: .04em; border-bottom: 1px solid var(--border); font-weight: 650; background: var(--surface-subtle); }
+  .node-table td { padding: 9px 12px; border-bottom: 1px solid var(--border-subtle); vertical-align: middle; background: var(--surface); }
+  .node-table tr:last-child td { border-bottom: none; }
+  .node-table tr:hover td { background: #f9fbff; }
+  .nodes-toolbar { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; align-items: center; }
+  .nodes-search-box { position: relative; min-width: 300px; margin-left: auto; }
+  #nodes-search-input { width: 100%; padding: 5px 12px; border: 1px solid var(--border); border-radius: 20px;
+    background: var(--surface); color: var(--text); font-size: 12px; font-family: var(--mono); outline: none; }
+  #nodes-search-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(37,99,235,.10); }
+  .node-action { color: var(--accent); border: 1px solid rgba(37,99,235,.18); background: var(--accent-soft);
+    border-radius: 999px; padding: 2px 8px; font-size: 11px; cursor: pointer; margin-right: 4px; white-space: nowrap; }
+  .node-action:hover { border-color: rgba(37,99,235,.36); background: rgba(37,99,235,.12); }
+  .node-action-muted { color: var(--muted); border-color: var(--border); background: var(--surface-subtle); }
+  .node-note { color: var(--muted); font-size: 11px; max-width: 360px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .status-badge { padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 650; }
+  .status-mastered  { background: rgba(22,131,58,.12);  color: var(--mastered); }
+  .status-exploring { background: rgba(161,92,0,.12); color: var(--exploring); }
+  .status-unknown   { background: rgba(138,148,163,.18);    color: var(--muted); }
+  .status-questioned{ background: rgba(201,37,45,.12);  color: var(--questioned); }
+  .conf-bar { display: inline-block; width: 60px; height: 4px; background: var(--surface-subtle); border-radius: 2px; vertical-align: middle; margin-right: 6px; overflow: hidden; }
+  .conf-fill { height: 100%; border-radius: 2px; }
+  .has-link { color: var(--accent); text-decoration: none; font-size: 11px; }
+
+  /* ── 开放问题 ── */
+  .q-section { margin-bottom: 20px; }
+  .q-title { font-size: 13px; font-weight: 600; margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
+  .q-count { padding: 1px 7px; border-radius: 20px; font-size: 11px; font-weight: 700; }
+  .q-critical .q-count { background: rgba(248,81,73,.2); color: var(--critical); }
+  .q-medium .q-count { background: rgba(227,179,65,.2); color: var(--medium); }
+  .q-low .q-count { background: rgba(88,166,255,.2); color: var(--low); }
+  .q-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; margin-bottom: 8px; box-shadow: var(--shadow-sm); }
+  .q-id { color: var(--muted); font-size: 11px; margin-bottom: 4px; }
+  .q-text { line-height: 1.5; }
+  .q-date { color: var(--muted); font-size: 11px; margin-top: 6px; }
+
+  /* ── 随时记收件箱 ── */
+  .quicknotes-header {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+  .quicknotes-title { font-size: 15px; font-weight: 650; }
+  .quicknotes-counts { color: var(--muted); font-size: 12px; }
+  .quicknotes-filters { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+  .quicknotes-filter-btn {
+    padding: 5px 10px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--surface);
+    color: var(--muted);
+    cursor: pointer;
+    font-size: 12px;
+  }
+  .quicknotes-filter-btn:hover { border-color: #c7d0dd; color: var(--text); background: var(--surface-subtle); }
+  .quicknotes-filter-btn.active { border-color: rgba(37,99,235,.26); color: var(--accent); background: var(--accent-soft); }
+  .quicknotes-list { display: flex; flex-direction: column; gap: 8px; }
+  .quicknotes-item {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 12px 14px;
+    box-shadow: var(--shadow-sm);
+  }
+  .quicknotes-meta {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    color: var(--muted);
+    font-size: 11px;
+    margin-bottom: 7px;
+  }
+  .quicknotes-type { color: var(--accent); font-weight: 650; }
+  .quicknotes-content {
+    color: var(--text);
+    font-size: 13px;
+    line-height: 1.65;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  .quicknotes-file {
+    margin-top: 7px;
+    color: var(--faint);
+    font-family: var(--mono);
+    font-size: 11px;
+    overflow-wrap: anywhere;
+  }
+
+  /* ── 问答日志 ── */
+  .qa-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; margin-bottom: 10px; box-shadow: var(--shadow-sm); }
+  .qa-meta { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; font-size: 11px; color: var(--muted); }
+  .qa-subsys-tag { padding: 1px 8px; border-radius: 20px; background: rgba(9,105,218,.1); color: var(--accent); font-weight: 600; }
+  .qa-group { color: var(--muted); }
+  .qa-question { font-weight: 600; margin-bottom: 6px; line-height: 1.5; }
+  .qa-field-label { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .5px; margin-top: 8px; margin-bottom: 2px; }
+  .qa-field-value { line-height: 1.6; font-size: 13px; }
+
+  /* ── 日志 ── */
+  .journal-entry { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; margin-bottom: 12px; box-shadow: var(--shadow-sm); }
+  .journal-date { color: var(--accent); font-weight: 600; margin-bottom: 10px; font-size: 15px; }
+  .journal-content { color: var(--muted); line-height: 1.75; font-size: 15px; }
+  .journal-content li { margin-left: 16px; margin-bottom: 2px; }
+  .section-label { font-size: 13px; font-weight: 650; color: var(--text); text-transform: uppercase; letter-spacing: .04em; margin: 8px 0 4px; }
+
+  /* ── 使用指南 ── */
+  .guide-section { margin-bottom: 30px; }
+  .guide-section h2 { font-size: 15px; font-weight: 650; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+  .guide-section h3 { font-size: 13px; font-weight: 650; margin: 16px 0 8px; color: var(--text); }
+  .guide-section p { color: var(--muted); line-height: 1.7; font-size: 13px; margin-bottom: 8px; }
+  .step-list { list-style: none; counter-reset: steps; }
+  .step-list li { counter-increment: steps; padding: 10px 14px 10px 44px; position: relative; border-left: 2px solid var(--border); margin-bottom: 6px; font-size: 13px; line-height: 1.6; background: var(--surface); border-radius: 0 6px 6px 0; box-shadow: var(--shadow-sm); }
+  .step-list li::before { content: counter(steps); position: absolute; left: -13px; top: 10px; width: 22px; height: 22px; border-radius: 50%; background: var(--accent); color: #fff; font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+  .step-list li code { background: var(--surface-subtle); padding: 1px 6px; border-radius: 4px; font-size: 12px; color: var(--text); }
+  .cmd-block { background: #f8fafc; border: 1px solid var(--border); color: var(--text); border-radius: var(--radius); padding: 14px 16px; font-family: var(--mono); font-size: 13px; margin: 8px 0 12px; line-height: 1.8; overflow-x: auto; }
+  .cmd-block .comment { color: var(--faint); }
+  .cmd-block .cmd { color: #1d4ed8; }
+  .cmd-block span[style*="--text"] { color: var(--text) !important; }
+  .feature-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; margin-bottom: 12px; }
+  .feature-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; box-shadow: var(--shadow-sm); }
+  .feature-card .fc-tag { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; margin-bottom: 8px; }
+  .tag-skill  { background: rgba(37,99,235,.10); color: var(--accent); }
+  .tag-mcp    { background: rgba(22,131,58,.12);  color: var(--mastered); }
+  .tag-hook   { background: rgba(161,92,0,.12);  color: var(--medium); }
+  .tag-agent  { background: rgba(207,34,46,.1);   color: var(--critical); }
+  .tag-memory { background: rgba(139,95,207,.12); color: #8250df; }
+  .feature-card .fc-title { font-size: 13px; font-weight: 650; margin-bottom: 4px; }
+  .feature-card .fc-trigger { font-family: var(--mono); font-size: 11px; color: var(--accent); background: var(--accent-soft); padding: 2px 6px; border-radius: 4px; margin-bottom: 6px; display: inline-block; }
+  .feature-card .fc-desc { font-size: 12px; color: var(--muted); line-height: 1.6; }
+  .tip { background: var(--accent-soft); border: 1px solid rgba(37,99,235,.18); border-radius: 6px; padding: 10px 14px; font-size: 12px; color: var(--text); margin: 8px 0; line-height: 1.6; }
+  .tip strong { color: var(--accent); }
+  .workflow-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; font-size: 12px; }
+  .wf-node { background: var(--surface); border: 1px solid var(--border); padding: 4px 10px; border-radius: 999px; white-space: nowrap; }
+  .wf-arrow { color: var(--muted); }
+
+  .guide-toc { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 24px; }
+  .toc-item { padding: 5px 12px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface); font-size: 12px; color: var(--muted); cursor: pointer; transition: all .15s; text-decoration: none; }
+  .toc-item:hover { border-color: rgba(37,99,235,.26); color: var(--accent); background: var(--accent-soft); }
+
+  /* ── 学习文档 ── */
+  .docs-toolbar { display:flex; gap:8px; margin-bottom:12px; flex-wrap:wrap; align-items:center; }
+  .docs-search-box { position:relative; min-width:260px; margin-left:auto; }
+  #docs-search-input { width:100%; padding:5px 12px; border:1px solid var(--border); border-radius:20px;
+    background:var(--surface); color:var(--text); font-size:12px; font-family:var(--mono); outline:none; box-sizing:border-box; }
+  #docs-search-input:focus { border-color:var(--accent); box-shadow: 0 0 0 3px rgba(37,99,235,.10); }
+  .docs-search-item { padding:8px 10px; font-size:12px; cursor:pointer; border-bottom:1px solid var(--border); }
+  .docs-search-item:last-child { border-bottom:none; }
+  .docs-search-item:hover { background:var(--surface-subtle); }
+  .docs-search-item .dsi-head { display:flex; justify-content:space-between; gap:8px; align-items:baseline; margin-bottom:3px; }
+  .docs-search-item .dsi-name { font-family:var(--mono); font-weight:650; }
+  .docs-search-item .dsi-meta { font-size:10px; color:var(--muted); flex-shrink:0; }
+  .docs-search-item .dsi-snippet { color:var(--muted); font-size:11px; line-height:1.5; }
+  .docs-search-item .dsi-snippet mark { background:rgba(227,179,65,.35); color:var(--text); border-radius:2px; }
+  .docs-content { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:28px 34px; line-height:1.78; font-size:16px; overflow-x:auto; box-shadow:var(--shadow-sm); }
+  .docs-reader { display:grid; grid-template-columns:minmax(0, 1fr) 250px; gap:12px; align-items:start; }
+  .docs-reader-full { grid-template-columns:minmax(0, 1fr); }
+  .docs-content h1[id], .docs-content h2[id], .docs-content h3[id] { scroll-margin-top:118px; }
+  .docs-content h1 { font-size:24px; font-weight:720; margin:0 0 14px; border-bottom:2px solid var(--border); padding-bottom:10px; }
+  .docs-content h2 { font-size:19px; font-weight:680; margin:24px 0 10px; padding-bottom:7px; border-bottom:1px solid var(--border); }
+  .docs-content h3 { font-size:17px; font-weight:650; margin:16px 0 7px; color:var(--text); }
+  .docs-content p  { margin:0 0 10px; color:var(--muted); }
+  .docs-content a  { color:var(--accent); text-decoration:none; }
+  .docs-content code { background:var(--surface-subtle); padding:1px 5px; border-radius:3px; font-size:15px; font-family:var(--mono); color:var(--text); }
+  .docs-content pre { background:#f8fafc; color:var(--text); padding:14px 16px; border-radius:6px; overflow-x:auto; margin:12px 0; border:1px solid var(--border); }
+  .docs-content pre code { background:none; padding:0; color:inherit; font-size:15px; }
+  .docs-content .mermaid-figure { position:relative; margin:16px 0; border:1px solid var(--border); border-radius:6px; background:#fff; overflow:hidden; }
+  .docs-content .mermaid-mode-switch { position:absolute; top:8px; left:8px; z-index:2; display:flex; gap:3px; padding:4px; border:1px solid var(--border); border-radius:6px; background:rgba(255,255,255,.94); box-shadow:var(--shadow-sm); }
+  .docs-content .mermaid-mode-switch button { min-width:44px; height:28px; border:1px solid transparent; border-radius:5px; background:transparent; color:var(--muted); cursor:pointer; font-size:12px; line-height:1; }
+  .docs-content .mermaid-mode-switch button.active { border-color:var(--border); background:var(--surface-subtle); color:var(--text); font-weight:650; }
+  .docs-content .mermaid-source-pane { display:none; margin:0; padding:48px 16px 16px; border:0; border-radius:0; max-height:70vh; overflow:auto; text-align:left; }
+  .docs-content .mermaid-figure[data-mode="source"] .mermaid-diagram-pane { display:none; }
+  .docs-content .mermaid-figure[data-mode="source"] .mermaid-source-pane { display:block; }
+  .docs-content .mermaid-toolbar, .mermaid-overlay-toolbar { position:absolute; top:8px; right:8px; z-index:2; display:flex; gap:4px; padding:4px; border:1px solid var(--border); border-radius:6px; background:rgba(255,255,255,.94); box-shadow:var(--shadow-sm); }
+  .docs-content .mermaid-toolbar button, .mermaid-overlay-toolbar button { width:28px; height:28px; border:1px solid transparent; border-radius:5px; background:transparent; color:var(--text); cursor:pointer; font-size:15px; line-height:1; }
+  .docs-content .mermaid-toolbar button:hover, .mermaid-overlay-toolbar button:hover { border-color:var(--border); background:var(--surface-subtle); }
+  .docs-content .mermaid-viewport { width:100%; min-height:0; padding:44px 16px 16px; overflow:hidden; text-align:center; cursor:grab; }
+  .docs-content .mermaid-viewport:active { cursor:grabbing; }
+  .docs-content .mermaid { display:inline-block; min-width:100%; text-align:center; }
+  .docs-content .mermaid-canvas, .mermaid-overlay-canvas { display:block; width:100%; height:100%; }
+  .docs-content .mermaid svg { display:block; width:100%; height:100%; transform-origin:0 0; }
+  .mermaid-overlay { position:fixed; inset:0; z-index:100; display:none; background:rgba(15,23,42,.78); }
+  .mermaid-overlay.show { display:block; }
+  body.mermaid-overlay-open { overflow:hidden; }
+  .mermaid-overlay-panel { position:absolute; inset:18px; border:1px solid var(--border); border-radius:8px; background:var(--surface); box-shadow:var(--shadow-md); overflow:hidden; }
+  .mermaid-overlay-viewport { position:absolute; inset:0; padding:58px 24px 24px; overflow:hidden; text-align:center; cursor:grab; }
+  .mermaid-overlay-viewport:active { cursor:grabbing; }
+  .mermaid-overlay-viewport svg { display:block; width:100%; height:100%; transform-origin:0 0; }
+  .docs-content table { border-collapse:collapse; width:100%; margin:10px 0; font-size:15px; }
+  .docs-content th, .docs-content td { padding:7px 12px; border:1px solid var(--border); text-align:left; }
+  .docs-content th { background:var(--surface-subtle); font-weight:650; }
+  .docs-content blockquote { border-left:3px solid var(--accent); padding:6px 12px; color:var(--muted); margin:10px 0; background:var(--accent-soft); border-radius:0 4px 4px 0; }
+  .docs-content ul, .docs-content ol { margin:0 0 10px 20px; color:var(--muted); }
+  .docs-content li { margin-bottom:2px; }
+  .docs-content hr { border:none; border-top:1px solid var(--border); margin:16px 0; }
+  .docs-empty { color:var(--muted); padding:60px; text-align:center; font-size:14px; background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); }
+  .docs-file-label { font-size:12px; color:var(--muted); margin-left:4px; }
+  .docs-picker { position:relative; min-width:260px; }
+  .docs-picker-button { display:flex; align-items:center; justify-content:space-between; gap:12px;
+    min-width:260px; max-width:min(520px, calc(100vw - 56px)); padding:6px 10px;
+    border:1px solid var(--border); border-radius:6px; background:var(--surface);
+    color:var(--text); font-size:12px; font-family:var(--mono); cursor:pointer; }
+  .docs-picker-button:hover { border-color:#c7d0dd; background:var(--surface-subtle); }
+  .docs-picker-button .docs-picker-current { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .docs-picker-button .docs-picker-caret { color:var(--muted); flex-shrink:0; }
+  .docs-picker-menu { position:absolute; top:34px; left:0; z-index:22; width:min(520px, calc(100vw - 56px));
+    max-height:380px; overflow:auto; background:var(--surface-raised); border:1px solid var(--border);
+    border-radius:6px; box-shadow:var(--shadow-md); padding:8px; }
+  .docs-tree-dir { padding:7px 8px 4px calc(8px + var(--depth) * 16px);
+    color:var(--muted); font-size:11px; font-weight:650; font-family:var(--mono); }
+  .docs-tree-file { display:block; width:100%; text-align:left; border:none; background:transparent;
+    padding:6px 8px 6px calc(8px + var(--depth) * 16px); border-radius:5px; color:var(--text);
+    font-size:12px; font-family:var(--mono); cursor:pointer; }
+  .docs-tree-file:hover { background:var(--surface-subtle); }
+  .docs-tree-file.active { background:var(--accent-soft); color:var(--accent); font-weight:650; }
+  .docs-tree-file-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; display:block; }
+  .docs-heading-nav { position:sticky; top:112px; max-height:calc(100vh - 132px); overflow:auto;
+    background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
+    padding:12px; box-shadow:var(--shadow-sm); }
+  .docs-heading-nav-head { display:flex; align-items:center; justify-content:space-between; gap:8px;
+    margin-bottom:8px; color:var(--faint); font-size:11px; font-weight:650; text-transform:uppercase; letter-spacing:.04em; }
+  .docs-heading-close { border:none; background:transparent; color:var(--muted); cursor:pointer;
+    width:24px; height:24px; border-radius:5px; font-size:16px; line-height:1; }
+  .docs-heading-close:hover { background:var(--surface-subtle); color:var(--text); }
+  .docs-heading-list { display:flex; flex-direction:column; gap:2px; }
+  .docs-heading-item { display:block; padding:5px 8px; padding-left:calc(8px + (var(--level) - 1) * 12px);
+    color:var(--muted); border-radius:5px; font-size:12px; line-height:1.4; text-decoration:none; overflow:hidden;
+    text-overflow:ellipsis; white-space:nowrap; }
+  .docs-heading-item:hover { color:var(--accent); background:var(--accent-soft); }
+
+  /* ── 调用链详情面板 ── */
+  #chain-detail-panel { margin-top:14px; }
+  .chain-detail-box { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
+                      padding:14px 16px; box-shadow:var(--shadow-sm); }
+  .chain-detail-box h5 { font-size:11px; font-weight:600; color:var(--muted); text-transform:uppercase;
+                         letter-spacing:.04em; margin-bottom:10px; }
+  .chain-select-bar { display:flex; gap:10px; flex-wrap:wrap; margin-bottom:10px; align-items:center; }
+  .chain-select-item { display:flex; align-items:center; gap:5px; font-size:11px; font-family:var(--mono);
+               cursor:pointer; padding:3px 10px; border-radius:999px; border:1px solid var(--border);
+               background:var(--surface); color:var(--muted); transition:all .15s; }
+  .chain-select-item.checked { border-color:var(--accent); color:var(--accent);
+                      background:var(--accent-soft); }
+  .chain-select-item input { cursor:pointer; }
+  .chain-select-all { font-size:11px; color:var(--accent); cursor:pointer; text-decoration:underline;
+               background:none; border:none; padding:0; }
+  .chain-code-block { margin-bottom:12px; }
+  .chain-code-block:last-child { margin-bottom:0; }
+  .chain-code-title { font-size:11px; color:var(--muted); margin-bottom:4px; font-family:var(--mono); }
+  .chain-code { background:#f8fafc; color:var(--text); padding:12px 14px; border-radius:6px;
+                font-family:var(--mono); font-size:12px; line-height:1.7; overflow-x:auto;
+                white-space:pre; border:1px solid var(--border); }
+  .chain-code .hl { color:var(--accent); font-weight:600; }
+
+  /* ── 手动添加调用链 ── */
+  .modal-overlay { position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(15,23,42,.45);
+                    display:flex; align-items:center; justify-content:center; z-index:100; }
+  .modal-box { background:var(--surface-raised); border:1px solid var(--border); border-radius:10px; padding:20px 24px; width:640px;
+               max-height:85vh; overflow-y:auto; box-shadow:var(--shadow-md); }
+  .modal-box h3 { font-size:15px; font-weight:600; margin-bottom:4px; }
+  .modal-box .modal-hint { font-size:12px; color:var(--muted); margin-bottom:12px; line-height:1.6; }
+  .modal-box textarea { width:100%; height:220px; font-family:var(--mono); font-size:12px;
+               padding:10px 12px; border:1px solid var(--border); border-radius:6px;
+               background:var(--surface-subtle); color:var(--text); resize:vertical; box-sizing:border-box; }
+  .modal-box input[type=text] { width:100%; padding:6px 10px; border:1px solid var(--border);
+               border-radius:6px; background:var(--surface-subtle); color:var(--text);
+               font-size:13px; box-sizing:border-box; margin-bottom:10px; }
+  .modal-preview { background:var(--surface-subtle); border:1px solid var(--border); border-radius:6px;
+               padding:10px 12px; margin-top:10px; font-size:12px; max-height:180px; overflow-y:auto; }
+  .modal-preview-edge { font-family:var(--mono); padding:2px 0; }
+  .modal-preview-empty { color:var(--muted); }
+  .modal-error { color:var(--critical); font-size:12px; margin-top:8px; }
+  .modal-actions { display:flex; gap:8px; justify-content:flex-end; margin-top:16px; }
+  .modal-btn { padding:6px 16px; border-radius:6px; border:1px solid var(--border);
+               background:var(--surface); color:var(--text); cursor:pointer; font-size:13px; }
+  .modal-btn-primary { background:var(--accent); color:#fff; border-color:var(--accent); }
+  .modal-btn:disabled { opacity:.5; cursor:not-allowed; }
+
+  /* ── 快速记录 ── */
+  .quick-note-fab {
+    position: fixed;
+    right: 22px;
+    bottom: 22px;
+    z-index: 70;
+    padding: 9px 14px;
+    border: 1px solid rgba(37,99,235,.24);
+    border-radius: 999px;
+    background: var(--surface-raised);
+    color: var(--accent);
+    box-shadow: var(--shadow-md);
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 650;
+  }
+  .quick-note-fab:hover { background: #f9fbff; border-color: rgba(37,99,235,.42); }
+  .quick-note-panel {
+    position: fixed;
+    right: 22px;
+    bottom: 72px;
+    z-index: 75;
+    display: none;
+    width: min(360px, calc(100vw - 28px));
+    max-height: calc(100vh - 94px);
+    overflow-y: auto;
+    padding: 14px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface-raised);
+    box-shadow: var(--shadow-md);
+  }
+  .quick-note-panel.open { display: block; }
+  .quick-note-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  .quick-note-title { font-size: 13px; font-weight: 650; }
+  .quick-note-close {
+    margin-left: auto;
+    width: 26px;
+    height: 26px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--surface);
+    color: var(--muted);
+    cursor: pointer;
+    line-height: 1;
+  }
+  .quick-note-close:hover { color: var(--text); background: var(--surface-subtle); }
+  .quick-note-types { display: flex; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; }
+  .quick-note-type {
+    padding: 5px 10px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--surface);
+    color: var(--muted);
+    cursor: pointer;
+    font-size: 12px;
+  }
+  .quick-note-type.active {
+    border-color: rgba(37,99,235,.26);
+    background: var(--accent-soft);
+    color: var(--accent);
+  }
+  .quick-note-source {
+    margin-bottom: 8px;
+    color: var(--faint);
+    font-family: var(--mono);
+    font-size: 11px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  #quick-note-content {
+    width: 100%;
+    min-height: 110px;
+    max-height: 260px;
+    padding: 9px 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--surface-subtle);
+    color: var(--text);
+    box-sizing: border-box;
+    resize: vertical;
+    outline: none;
+    font: inherit;
+  }
+  #quick-note-content:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(37,99,235,.10); }
+  .quick-note-error {
+    min-height: 18px;
+    margin-top: 6px;
+    color: var(--critical);
+    font-size: 12px;
+  }
+  .quick-note-save {
+    width: 100%;
+    margin-top: 4px;
+    padding: 8px 12px;
+    border: 1px solid var(--accent);
+    border-radius: 6px;
+    background: var(--accent);
+    color: #fff;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 650;
+  }
+  .quick-note-save:disabled { opacity: .6; cursor: wait; }
+  .quick-note-recent {
+    margin-top: 12px;
+    padding-top: 10px;
+    border-top: 1px solid var(--border-subtle);
+  }
+  .quick-note-recent-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 8px;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 650;
+  }
+  .quick-note-recent-head button {
+    border: 0;
+    background: transparent;
+    color: var(--accent);
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 650;
+  }
+  .quick-note-recent-item {
+    padding: 8px 0;
+    border-top: 1px solid var(--border-subtle);
+  }
+  .quick-note-recent-item:first-child { border-top: 0; padding-top: 0; }
+  .quick-note-recent-meta {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    color: var(--faint);
+    font-size: 11px;
+    margin-bottom: 3px;
+  }
+  .quick-note-recent-content {
+    color: var(--text);
+    font-size: 12px;
+    line-height: 1.55;
+    max-height: 3.1em;
+    overflow: hidden;
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+  }
+  .quick-note-recent-empty {
+    padding: 6px 0;
+    color: var(--faint);
+    font-size: 12px;
+    line-height: 1.4;
+  }
+  .quick-note-toast {
+    position: fixed;
+    right: 22px;
+    bottom: 22px;
+    z-index: 80;
+    display: none;
+    max-width: min(360px, calc(100vw - 28px));
+    padding: 9px 12px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--surface-raised);
+    color: var(--text);
+    box-shadow: var(--shadow-md);
+    font-size: 13px;
+  }
+  .quick-note-toast.show { display: block; }
+  .quick-note-toast.error { border-color: rgba(201,37,45,.28); color: var(--critical); }
+  .quick-note-toast.success { border-color: rgba(22,131,58,.24); color: var(--mastered); }
+
+  #graph > div:first-child {
+    flex-wrap: wrap;
+  }
+
+  @media (max-width: 760px) {
+    header {
+      position: static;
+      align-items: flex-start;
+      padding: 12px 16px;
+      flex-wrap: wrap;
+    }
+    header h1 { width: calc(100% - 28px); font-size: 15px; }
+    #last-updated { margin-left: 20px; width: 100%; }
+    .tabs {
+      position: sticky;
+      top: 0;
+      padding: 8px 16px;
+      gap: 6px;
+    }
+    .tab { padding: 6px 10px; font-size: 12px; }
+    .panel { padding: 16px 14px 28px; }
+    .cards { grid-template-columns: 1fr; }
+    .sys-grid { grid-template-columns: 1fr; }
+    .overview-focus-layout { grid-template-columns: 1fr; }
+    .focus-card { padding: 16px; }
+    .focus-title { font-size: 19px; }
+    .attention-grid { grid-template-columns: 1fr; }
+    .progress-block-grid { grid-template-columns: 1fr; }
+    .progress-block-head { flex-direction: column; align-items: flex-start; }
+    .graph-search-box,
+    .nodes-search-box,
+    .docs-search-box {
+      min-width: 100%;
+      margin-left: 0;
+      order: 10;
+    }
+    #graph-container {
+      height: 560px;
+      min-height: 420px;
+    }
+    .graph-legend {
+      position: static;
+      margin: 8px;
+    }
+    .node-table {
+      min-width: 760px;
+    }
+    #nodes,
+    .docs-content,
+    .chain-code,
+    .cmd-block {
+      overflow-x: auto;
+    }
+    .docs-content {
+      padding: 20px 18px;
+      font-size: 15px;
+    }
+    .docs-reader {
+      display: block;
+    }
+    .docs-heading-nav {
+      position: static;
+      max-height: 260px;
+      margin-bottom: 12px;
+    }
+    .modal-box {
+      width: calc(100vw - 24px);
+      padding: 16px;
+    }
+    .quick-note-fab {
+      right: 14px;
+      bottom: 14px;
+    }
+    .quick-note-panel {
+      right: 14px;
+      left: 14px;
+      bottom: 60px;
+      width: auto;
+      max-height: calc(100vh - 74px);
+    }
+    .quick-note-toast {
+      right: 14px;
+      bottom: 14px;
+      max-width: calc(100vw - 28px);
+    }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="live-dot"></div>
+  <h1>Kernel Learning Dashboard</h1>
+  <span id="last-updated"></span>
+</header>
+
+<div class="tabs">
+  <div class="tab active" data-tab="overview">总览</div>
+  <div class="tab" data-tab="graph">知识图谱</div>
+  <div class="tab" data-tab="nodes">节点列表</div>
+  <div class="tab" data-tab="questions">开放问题</div>
+  <div class="tab" data-tab="quicknotes">随时记</div>
+  <div class="tab" data-tab="qalog">问答日志</div>
+  <div class="tab" data-tab="journal">学习日志</div>
+  <div class="tab" data-tab="docs">学习文档</div>
+  <div class="tab" data-tab="guide">使用指南</div>
+</div>
+
+<div id="overview" class="panel active"></div>
+<div id="graph" class="panel"></div>
+<div id="nodes" class="panel"></div>
+<div id="questions" class="panel"></div>
+<div id="quicknotes" class="panel"></div>
+<div id="qalog" class="panel"></div>
+<div id="journal" class="panel"></div>
+<div id="docs" class="panel"></div>
+
+<button class="quick-note-fab" type="button" onclick="toggleQuickNote()">随时记</button>
+<div id="quick-note-panel" class="quick-note-panel" role="dialog" aria-label="随时记" aria-hidden="true">
+  <div class="quick-note-head">
+    <div class="quick-note-title">快速记录</div>
+    <button class="quick-note-close" type="button" onclick="closeQuickNote()" aria-label="关闭">×</button>
+  </div>
+  <div class="quick-note-types">
+    <button class="quick-note-type active" type="button" aria-pressed="true" onclick="setQuickNoteType('问题')">问题</button>
+    <button class="quick-note-type" type="button" aria-pressed="false" onclick="setQuickNoteType('笔记')">笔记</button>
+    <button class="quick-note-type" type="button" aria-pressed="false" onclick="setQuickNoteType('待整理')">待整理</button>
+  </div>
+  <div id="quick-note-source" class="quick-note-source"></div>
+  <textarea id="quick-note-content" placeholder="记录当前看到的问题、线索或待整理内容"></textarea>
+  <div id="quick-note-error" class="quick-note-error" role="alert"></div>
+  <button id="quick-note-save" class="quick-note-save" type="button" onclick="saveQuickNote()">保存</button>
+  <div id="quick-note-recent" class="quick-note-recent">
+    <div class="quick-note-recent-head">
+      <span>最近记录</span>
+      <button type="button" onclick="openQuickNotesTab()">查看全部</button>
+    </div>
+    <div id="quick-note-recent-list"></div>
+  </div>
+</div>
+<div id="quick-note-toast" class="quick-note-toast" role="status" aria-live="polite"></div>
+
+<div id="guide" class="panel">
+
+  <div class="guide-toc">
+    <a class="toc-item" href="#g-start">快速开始</a>
+    <a class="toc-item" href="#g-dashboard">Dashboard</a>
+    <a class="toc-item" href="#g-workflow">Claude 工作流</a>
+    <a class="toc-item" href="#g-graph">图谱使用</a>
+    <a class="toc-item" href="#g-docs">文档检索</a>
+    <a class="toc-item" href="#g-newmodule">新增板块</a>
+    <a class="toc-item" href="#g-skills">Skills</a>
+    <a class="toc-item" href="#g-mcp">MCP 工具</a>
+    <a class="toc-item" href="#g-hooks">Hooks</a>
+    <a class="toc-item" href="#g-agents">Agents</a>
+    <a class="toc-item" href="#g-memory">Memory</a>
+  </div>
+
+  <!-- 快速开始 -->
+  <div class="guide-section" id="g-start">
+    <h2>快速开始</h2>
+    <p>这个 Dashboard 是 <code>kernel-learning</code> 的本地学习状态面板，读取 <code>.claude/memory/</code>、<code>learn/</code> 和 <code>dashboard/manual_edges.json</code>，不直接分析内核源码。源码分析、memory 更新和笔记生成仍通过 Claude 会话完成。</p>
+    <div class="cmd-block">
+      <span class="comment"># 1. 在工程目录启动 Claude，让项目级 CLAUDE.md 生效</span><br>
+      <span class="cmd">cd /path/to/kernel-learning-workspace && claude</span><br><br>
+      <span class="comment"># 2. Claude 启动后应先读取 memory，并输出类似：</span><br>
+      <span style="color:var(--text)">已加载学习上下文，当前有 N 个开放问题，最近学习了 XXX。</span>
+    </div>
+    <div class="cmd-block">
+      <span class="comment"># 3. 启动 Dashboard</span><br>
+      <span class="cmd">cd /path/to/kernel-learning-workspace/dashboard && ./start.sh</span><br><br>
+      <span class="comment"># 浏览器打开：</span><br>
+      <span style="color:var(--text)">http://localhost:7788</span>
+    </div>
+    <div class="tip"><strong>提示：</strong><code>start.sh</code> 会复用已运行的服务。关闭面板服务用 <code>cd /path/to/kernel-learning-workspace/dashboard && ./stop.sh</code>。</div>
+  </div>
+
+  <!-- Dashboard -->
+  <div class="guide-section" id="g-dashboard">
+    <h2>Dashboard 页面怎么读</h2>
+    <div class="feature-grid">
+      <div class="feature-card">
+        <span class="fc-tag tag-memory">页面</span>
+        <div class="fc-title">总览</div>
+        <div class="fc-desc">展示总体进度、知识节点数量、开放问题数量、已解答问题数量，以及 <code>MEMORY.md</code> 中的当前学习焦点。</div>
+      </div>
+      <div class="feature-card">
+        <span class="fc-tag tag-memory">页面</span>
+        <div class="fc-title">知识图谱</div>
+        <div class="fc-desc">提供两种视图：知识依赖图来自 <code>memory/*/dep-graph.md</code>；调用链路图来自 <code>learn/**/*.md</code> 里的调用树代码块和手动添加的调用链。</div>
+      </div>
+      <div class="feature-card">
+        <span class="fc-tag tag-memory">页面</span>
+        <div class="fc-title">节点列表</div>
+        <div class="fc-desc">按子系统、状态和置信度浏览 <code>knowledge.md</code> 节点，适合快速确认某个函数/结构体是否已经分析过。</div>
+      </div>
+      <div class="feature-card">
+        <span class="fc-tag tag-memory">页面</span>
+        <div class="fc-title">开放问题</div>
+        <div class="fc-desc">读取 <code>open-questions.md</code>，按 CRITICAL / MEDIUM / LOW 展示遗留问题和已解答记录。</div>
+      </div>
+      <div class="feature-card">
+        <span class="fc-tag tag-memory">页面</span>
+        <div class="fc-title">问答日志</div>
+        <div class="fc-desc">合并 <code>memory/*/qa-log.md</code>，用于回看之前已经问清楚的关键结论。</div>
+      </div>
+      <div class="feature-card">
+        <span class="fc-tag tag-memory">页面</span>
+        <div class="fc-title">学习文档</div>
+        <div class="fc-desc">扫描 <code>learn/**/*.md</code>，支持按子系统浏览和全文搜索，适合直接阅读函数级笔记、路线图和 synthesis 文档。</div>
+      </div>
+    </div>
+    <div class="tip"><strong>刷新机制：</strong>浏览器通过 <code>/api/stream</code> SSE 监听变化。修改 memory、learn 文档或手动调用链后，通常 3 秒内自动刷新；连接异常时会回退到 <code>/api/data</code> 拉取一次数据。</div>
+  </div>
+
+  <!-- Claude 工作流 -->
+  <div class="guide-section" id="g-workflow">
+    <h2>Claude 工作流</h2>
+
+    <h3>每次会话启动</h3>
+    <ol class="step-list">
+      <li>先读取 <code>.claude/memory/MEMORY.md</code> 和 <code>.claude/memory/open-questions.md</code>。</li>
+      <li>用一句话确认当前开放问题数量和最近学习内容。</li>
+      <li>后续回答默认使用中文。</li>
+    </ol>
+
+    <h3>分析函数 / 结构体</h3>
+    <div class="cmd-block">
+      <span class="cmd">你说："解释 enqueue_task_fair 的流程"</span><br>
+      <span class="cmd">你说："分析 sched_entity 结构体"</span><br>
+      <span class="cmd">你说："pick_next_task_fair 的调用链是什么"</span>
+    </div>
+    <div class="workflow-row">
+      <span class="wf-node">lookup_status.sh 预检查</span><span class="wf-arrow">→</span>
+      <span class="wf-node">必要时查 Confluence</span><span class="wf-arrow">→</span>
+      <span class="wf-node">kernel-graph MCP 查询</span><span class="wf-arrow">→</span>
+      <span class="wf-node">输出分析</span><span class="wf-arrow">→</span>
+      <span class="wf-node">kernel-learning-capture 更新 memory</span>
+    </div>
+    <p>项目配置要求：提到具体函数名时，Claude 不能凭记忆写路径、行号或调用关系，必须先查 kernel-graph MCP；分析完成后要立即 capture，维护 Dashboard 的数据来源。</p>
+
+    <h3>遇到遗留问题</h3>
+    <div class="cmd-block"><span class="cmd">你说："这个先放着" 或 "之后再看"</span></div>
+    <p>Claude 会写入 <code>open-questions.md</code>，按 CRITICAL / MEDIUM / LOW 管理。Dashboard 的“开放问题”页会自动显示。</p>
+
+    <h3>模块级整理</h3>
+    <div class="cmd-block">
+      <span class="cmd">你说："帮我理清这些文档"</span><br>
+      <span class="cmd">你说："生成 sched 的状态矩阵"</span><br>
+      <span class="cmd">你说："这个背后的理论是什么"</span>
+    </div>
+    <p><code>kernel-learning-synthesizer</code> 负责把已有函数笔记串成路径、术语表、状态矩阵；<code>kernel-concept-mapper</code> 负责沉淀理论背景和概念债。两者输出后都会被“学习文档”页扫描到。</p>
+  </div>
+
+  <!-- 图谱 -->
+  <div class="guide-section" id="g-graph">
+    <h2>知识图谱使用</h2>
+    <h3>知识依赖图</h3>
+    <p>默认模式。它来自 <code>.claude/memory/{subsystem}/dep-graph.md</code>，更适合回答“下一步读哪个节点”。下方“推荐阅读顺序”会根据节点状态和依赖关系排序，跳过已掌握节点。</p>
+    <h3>调用链路图</h3>
+    <p>切到“调用链路图”后，Dashboard 会扫描 <code>learn/**/*.md</code> 中无语言标签的调用树代码块，并合并 <code>dashboard/manual_edges.json</code>。紫色节点表示笔记里出现过、但还没有进入 <code>knowledge.md</code> 的函数。</p>
+    <h3>搜索、筛选和聚焦</h3>
+    <ol class="step-list">
+      <li>在搜索框输入函数名，按 Enter 定位节点。</li>
+      <li>用子系统按钮隐藏或显示某个模块，搜索命中被隐藏时会自动恢复显示。</li>
+      <li>定位节点后可启用 N 跳聚焦，只看当前节点附近的关系。</li>
+      <li>图谱拖拽或缩放到找不到节点时，点“重置视图”。</li>
+    </ol>
+    <h3>手动添加调用链</h3>
+    <p>点击“+ 手动添加调用链”，粘贴 kernel-graph 或笔记里的 ASCII 调用树。保存后会写入 <code>dashboard/manual_edges.json</code>，并自动合并到调用链路图。</p>
+    <div class="cmd-block">
+      <span style="color:var(--text)">foo_init</span><br>
+      <span style="color:var(--text)">└─ foo_register</span><br>
+      <span style="color:var(--text)">   └─ foo_enable</span>
+    </div>
+    <div class="tip"><strong>解析规则：</strong>上层是调用者，下层是被调用者；空行会重置一棵树；<code>WARN_ON</code>、<code>BUG_ON</code>、<code>return</code> 这类噪声会被过滤。</div>
+  </div>
+
+  <!-- 文档 -->
+  <div class="guide-section" id="g-docs">
+    <h2>学习文档检索</h2>
+    <p>“学习文档”页读取 <code>learn/</code> 下所有 Markdown。左侧按子系统和目录组织，右侧渲染正文。搜索框会做全文匹配，并显示路径、文件名和命中的片段。</p>
+    <ol class="step-list">
+      <li>读路线图：打开 <code>learn/{module}/{module}_read_guide.md</code>。</li>
+      <li>读函数分析：打开具体函数名对应的 Markdown。</li>
+      <li>读模块整理：打开 <code>learn/{module}/synthesis/</code> 下的术语表、路径索引或状态矩阵。</li>
+      <li>发现文档缺口：回到 Claude 会话中请求分析或整理，写入后的新文档会自动出现在这里。</li>
+    </ol>
+  </div>
+
+  <!-- 新增学习板块 -->
+  <div class="guide-section" id="g-newmodule">
+    <h2>新增学习板块</h2>
+    <p>当你想开始学一个新的内核子系统时，一句话完成全部初始化。</p>
+    <h3>第一步：触发 add-learning-module</h3>
+    <div class="cmd-block"><span class="cmd">你说："我要开始学 kprobe"</span></div>
+    <p>Claude 自动完成以下所有操作：</p>
+    <ol class="step-list">
+      <li><strong>并行查询</strong>：kernel-graph MCP 查入口函数定位 + Confluence 搜索内部文档</li>
+      <li><strong>初始化 memory/kprobe/</strong>：创建 <code>knowledge.md</code>（入口函数初始节点，全部 unknown）、<code>dep-graph.md</code>、<code>qa-log.md</code>，并更新 MEMORY.md</li>
+      <li><strong>CLAUDE.md 追加速查节</strong>：该子系统的关键路径和本地源码路径</li>
+      <li><strong>创建 <code>learn/kprobe/</code> 目录</strong> + <code>_index.md</code>（Obsidian 目录页）</li>
+      <li><strong>生成 <code>kprobe-specialist</code> agent</strong>：含该子系统背景知识的专属分析代理</li>
+      <li><strong>自动触发 kernel-reading-guide</strong>：无需开口，直接生成阅读需求文档 + 初始化骨架图（dep-graph.md + knowledge.md）</li>
+    </ol>
+
+    <h3>学习路线输出</h3>
+    <p><code>kernel-reading-guide</code> 结合 kernel-graph MCP 查询结果，生成：</p>
+    <ul style="margin-left:20px;color:var(--muted);font-size:13px;line-height:2">
+      <li>按功能分类的"阅读后能解决的问题"清单</li>
+      <li>关键源文件列表（文件路径 + 行号来自 MCP 真实查询）</li>
+      <li>按知识依赖排序的阅读顺序建议</li>
+      <li>API → 文件快速检索表</li>
+      <li>初始骨架图：用 <code>call_chain_down depth=2</code> 建立节点和调用边，Dashboard 知识图谱立刻有内容</li>
+    </ul>
+    <p>输出到 <code>learn/kprobe/kprobe_read_guide.md</code>。Obsidian 不会自动同步，需要手动说“同步 obsidian”。也可随时手动触发：</p>
+    <div class="cmd-block"><span class="cmd">你说："给我生成 kprobe 的学习路线"</span><br>
+    <span class="comment"># 或在 experiments/ 下新建 .c 文件后，Claude 自动建议生成</span></div>
+
+    <div class="tip"><strong>当前已有板块：</strong>以 <code>.claude/memory/</code> 和 <code>learn/</code> 目录为准；当前工程包含 sched、mpam、perf、ebpf、android_boot、vendor_hook 和 unclassified 等学习区。</div>
+  </div>
+
+  <!-- Skills -->
+  <div class="guide-section" id="g-skills">
+    <h2>Skills（触发词 → 自动执行）</h2>
+    <p>Skills 是有触发词的自动化流程，说出对应的话 Claude 就会执行。</p>
+    <div class="feature-grid">
+      <div class="feature-card">
+        <span class="fc-tag tag-skill">Skill</span>
+        <div class="fc-title">kernel-learning-capture</div>
+        <div class="fc-trigger">"记录这个" / "我理解了 X"</div>
+        <div class="fc-desc">分析完后自动链式调用。提取知识节点 → 更新 <code>memory/{subsystem}/knowledge.md</code>（状态+置信度）→ 补充 dep-graph.md 调用边 → 发现疑问写入 open-questions → 更新 MEMORY.md 统计。</div>
+      </div>
+      <div class="feature-card">
+        <span class="fc-tag tag-skill">Skill</span>
+        <div class="fc-title">kernel-progress-report</div>
+        <div class="fc-trigger">"进度" / "我学到哪了" / "下一步"</div>
+        <div class="fc-desc">读全部 memory 文件，生成：知识树（带状态标注）+ 各子系统统计表 + 3 选 1 建议（含 MCP 查询命令）。</div>
+      </div>
+      <div class="feature-card">
+        <span class="fc-tag tag-skill">Skill</span>
+        <div class="fc-title">kernel-impact-analyzer</div>
+        <div class="fc-trigger">"影响分析" / "改完影响什么"</div>
+        <div class="fc-desc">查 call_chain_up + find_struct_writers，输出 4 级影响分级，标注 HOT_PATH / SMP_SENSITIVE，给出具体测试工具建议。</div>
+      </div>
+      <div class="feature-card">
+        <span class="fc-tag tag-skill">Skill</span>
+        <div class="fc-title">obsidian-sync</div>
+        <div class="fc-trigger">"同步 obsidian"</div>
+        <div class="fc-desc">把 learn/ 下有变化的 .md 写入 Obsidian vault，自动扫描正文中的函数名生成 [[双向链接]]。当前 Stop hook 只会提示手动同步，不会自动触发。</div>
+      </div>
+      <div class="feature-card">
+        <span class="fc-tag tag-skill">Skill</span>
+        <div class="fc-title">add-learning-module</div>
+        <div class="fc-trigger">"我要开始学 XXX"</div>
+        <div class="fc-desc">全自动新增学习板块：查 MCP + 搜 Confluence → 建 <code>memory/{subsystem}/</code> 三文件 → 建 <code>learn/</code> 目录 → 生成 specialist agent → 自动调用 kernel-reading-guide 初始化骨架图。</div>
+      </div>
+      <div class="feature-card">
+        <span class="fc-tag tag-skill">Skill</span>
+        <div class="fc-title">kernel-qa-log</div>
+        <div class="fc-trigger">"记录这个问答" / "写进 qa-log"</div>
+        <div class="fc-desc">把已经确认的问答沉淀到 <code>memory/{subsystem}/qa-log.md</code>，Dashboard 的“问答日志”页会合并展示。</div>
+      </div>
+      <div class="feature-card">
+        <span class="fc-tag tag-skill">Skill</span>
+        <div class="fc-title">show-progress</div>
+        <div class="fc-trigger">"打开面板" / "show progress"</div>
+        <div class="fc-desc">用于打开或查看学习进度面板；也可以直接运行 <code>dashboard/start.sh</code> 启动本 Dashboard 服务。</div>
+      </div>
+    </div>
+    <p style="color:var(--muted);font-size:12px">以下两个全局 skill 也在此工程中使用：</p>
+    <div class="feature-grid">
+      <div class="feature-card">
+        <span class="fc-tag tag-skill">全局 Skill</span>
+        <div class="fc-title">kernel-code-analyzer</div>
+        <div class="fc-trigger">"解释 X" / "分析 X" / "详解 X"</div>
+        <div class="fc-desc">三维深度分析：大白话总览 + 控制流骨架 + 完整调用链（全部来自 kernel-graph MCP 真实查询）。分析完强制调用 capture。</div>
+      </div>
+      <div class="feature-card">
+        <span class="fc-tag tag-skill">全局 Skill</span>
+        <div class="fc-title">kernel-reading-guide</div>
+        <div class="fc-trigger">"学习路线" / "读哪些源码"</div>
+        <div class="fc-desc">扫描工程代码，生成结构化阅读路线：按功能分类 + 阅读顺序 + API 检索表（文件路径来自 MCP）。同时用 <code>call_chain_down depth=2</code> 初始化骨架图。输出到 <code>learn/{MODULE_KEY}/{MODULE_KEY}_read_guide.md</code>。</div>
+      </div>
+      <div class="feature-card">
+        <span class="fc-tag tag-skill">全局 Skill</span>
+        <div class="fc-title">kernel-learning-synthesizer</div>
+        <div class="fc-trigger">"总结这个模块" / "生成术语表"</div>
+        <div class="fc-desc">只基于已有笔记和 memory 做模块级整理，输出到 <code>learn/{module}/synthesis/</code>。</div>
+      </div>
+      <div class="feature-card">
+        <span class="fc-tag tag-skill">全局 Skill</span>
+        <div class="fc-title">kernel-concept-mapper</div>
+        <div class="fc-trigger">"理论是什么" / "补 concept map"</div>
+        <div class="fc-desc">维护概念债和理论 primer，输出到 <code>learn/{module}/concepts/</code> 或 <code>memory/{module}/concepts.md</code>。</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MCP -->
+  <div class="guide-section" id="g-mcp">
+    <h2>MCP 工具（Claude 自动调用，无需手动）</h2>
+    <p>Claude 遇到具体函数名时强制查 MCP，禁止凭记忆给出路径/调用关系。</p>
+    <div class="feature-grid">
+      <div class="feature-card">
+        <span class="fc-tag tag-mcp">MCP</span>
+        <div class="fc-title">kernel-graph</div>
+        <div class="fc-desc">Linux 6.0 完整调用图数据库（931MB SQLite）。提供 10 个查询工具：
+          <br><code style="font-size:11px">find_definition</code> · <code style="font-size:11px">find_callers</code> · <code style="font-size:11px">call_chain_up/down</code>
+          <br><code style="font-size:11px">find_struct</code> · <code style="font-size:11px">find_struct_writers</code> · <code style="font-size:11px">search_functions</code>
+        </div>
+      </div>
+      <div class="feature-card">
+        <span class="fc-tag tag-mcp">MCP</span>
+        <div class="fc-title">obsidian</div>
+        <div class="fc-desc">读写 Obsidian vault（<code style="font-size:11px">/mnt/c/Users/yujizhou/doc/confludec/</code>）。
+          <br>obsidian-sync skill 用它写入笔记和更新 [[双向链接]]。
+        </div>
+      </div>
+      <div class="feature-card">
+        <span class="fc-tag tag-mcp">MCP</span>
+        <div class="fc-title">atlassian-enterprise</div>
+        <div class="fc-desc">按 <code>CLAUDE.md</code> 规则搜索 Confluence 内部文档。开始分析 unknown 节点、处理 CRITICAL 开放问题或新增板块时应优先搜索；搜到的页面链接存入 <code>knowledge.md</code> 的“内部文档”列。</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Hooks -->
+  <div class="guide-section" id="g-hooks">
+    <h2>Hooks（自动触发，无需开口）</h2>
+    <div class="feature-grid">
+      <div class="feature-card">
+        <span class="fc-tag tag-hook">Hook · PostToolUse</span>
+        <div class="fc-title">内核模块检查</div>
+        <div class="fc-trigger">Write/Edit → experiments/*.c</div>
+        <div class="fc-desc">检测 <code>#include &lt;linux/module.h&gt;</code>，自动输出编译命令、MODULE_LICENSE 缺失警告、checkpatch 建议。Shell 脚本实现，条件不满足时完全静默。</div>
+      </div>
+      <div class="feature-card">
+        <span class="fc-tag tag-hook">Hook · Stop</span>
+        <div class="fc-title">会话结束自动化</div>
+        <div class="fc-trigger">关闭 Claude 时自动执行</div>
+        <div class="fc-desc">asyncRewake 机制：必要时补全未 capture 的分析 → 写 learning-journal 今日条目 → 提示如需同步 Obsidian 请手动说“同步 obsidian”。</div>
+      </div>
+      <div class="feature-card">
+        <span class="fc-tag tag-hook">Hook · PostToolUse</span>
+        <div class="fc-title">Capture 提醒</div>
+        <div class="fc-trigger">Write/Edit → learn/*.md</div>
+        <div class="fc-desc">写入学习笔记时记录变更到 <code>/tmp/kernel-learning-changed.txt</code>，并提醒确认是否已调用 <code>kernel-learning-capture</code>。</div>
+      </div>
+    </div>
+    <div class="tip"><strong>设计原则：</strong>条件判断类 Hook 用 Shell 脚本（静默可靠）；需要理解对话内容的行为放在 CLAUDE.md 规则里，不用 Hook。</div>
+  </div>
+
+  <!-- Agents -->
+  <div class="guide-section" id="g-agents">
+    <h2>Agents（专属子代理）</h2>
+    <p>主会话识别到对应领域的问题时自动派遣，内置领域背景知识减少重复查询。</p>
+    <div class="feature-grid">
+      <div class="feature-card">
+        <span class="fc-tag tag-agent">Agent</span>
+        <div class="fc-title">scheduler-analyst</div>
+        <div class="fc-desc">专注 CFS/RT/Deadline/Idle 四类调度器。内置：sched_class 链表、vruntime 计算、RT prio_array、Deadline EDF+CBS、关键结构体速查。每次分析标注 SMP 安全性。</div>
+      </div>
+      <div class="feature-card">
+        <span class="fc-tag tag-agent">Agent</span>
+        <div class="fc-title">mpam-specialist</div>
+        <div class="fc-desc">专注 ARM MPAM + resctrl。内置：PARTID/PMG/MSC 硬件模型、resctrl 层次图（VFS → rdtgroup → ctrlmondata → arch）、关键结构体速查。</div>
+      </div>
+      <div class="feature-card">
+        <span class="fc-tag tag-agent">Agent</span>
+        <div class="fc-title">perf-specialist</div>
+        <div class="fc-desc">专注 perf_events 性能事件子系统分析。</div>
+      </div>
+      <div class="feature-card">
+        <span class="fc-tag tag-agent">Agent</span>
+        <div class="fc-title">ebpf-specialist</div>
+        <div class="fc-desc">专注 eBPF 路径、概念和调用链分析。</div>
+      </div>
+      <div class="feature-card">
+        <span class="fc-tag tag-agent">Agent</span>
+        <div class="fc-title">android_boot-specialist</div>
+        <div class="fc-desc">专注 Android 手机整机启动和运行相关内核路径。</div>
+      </div>
+    </div>
+    <p style="color:var(--muted);font-size:12px">新增学习板块时，<code>add-learning-module</code> skill 会自动生成对应的 specialist agent。</p>
+  </div>
+
+  <!-- Memory -->
+  <div class="guide-section" id="g-memory">
+    <h2>Memory（持久化学习状态）</h2>
+    <p>存放在 <code>.claude/memory/</code>，随学习自动演化，也是本 Dashboard 的数据来源。</p>
+    <div class="feature-grid">
+      <div class="feature-card">
+        <span class="fc-tag tag-memory">Memory</span>
+        <div class="fc-title">memory/{subsystem}/knowledge.md</div>
+        <div class="fc-desc">每个子系统独立一个文件，记录函数/结构体的掌握状态。状态四档：<strong>mastered</strong>(≥80) · <strong>exploring</strong>(40-79) · <strong>unknown</strong>(&lt;40) · <strong>questioned</strong>。含 Confluence 内部文档列。</div>
+      </div>
+      <div class="feature-card">
+        <span class="fc-tag tag-memory">Memory</span>
+        <div class="fc-title">memory/{subsystem}/dep-graph.md</div>
+        <div class="fc-desc">该子系统的函数调用关系树（ASCII 格式）。kernel-reading-guide 初始化骨架，kernel-learning-capture 每次分析后补充精确边。Dashboard 知识图谱的数据来源。</div>
+      </div>
+      <div class="feature-card">
+        <span class="fc-tag tag-memory">Memory</span>
+        <div class="fc-title">open-questions.md</div>
+        <div class="fc-desc">待解答问题，三级优先级：CRITICAL（阻塞）/ MEDIUM（重要）/ LOW（感兴趣）。每条含建议 MCP 查询命令。</div>
+      </div>
+      <div class="feature-card">
+        <span class="fc-tag tag-memory">Memory</span>
+        <div class="fc-title">learning-journal.md</div>
+        <div class="fc-desc">按日期的会话日志，Stop hook 自动追加。记录：学习内容、知识状态变化、新增问题、下次建议。</div>
+      </div>
+      <div class="feature-card">
+        <span class="fc-tag tag-memory">Memory</span>
+        <div class="fc-title">MEMORY.md</div>
+        <div class="fc-desc">索引文件，每次会话启动时 Claude 首先读取。含当前学习焦点（各板块进度描述）和最近 5 个分析记录。</div>
+      </div>
+    </div>
+    <h3>排障</h3>
+    <ol class="step-list">
+      <li>页面打不开：确认 <code>./start.sh</code> 输出 <code>Dashboard 已启动：http://localhost:7788</code>，失败时查看 <code>/tmp/kernel-dashboard.log</code>。</li>
+      <li>数据不刷新：确认修改的是 <code>.claude/memory/</code>、<code>learn/</code> 或 <code>dashboard/manual_edges.json</code>；这些是 SSE 监听范围。</li>
+      <li>图谱没有节点：检查对应子系统是否有 <code>knowledge.md</code> 和 <code>dep-graph.md</code>，或在调用链路图里确认笔记中是否存在可解析的 ASCII 调用树代码块。</li>
+      <li>端口占用：运行 <code>cd /path/to/kernel-learning-workspace/dashboard && ./stop.sh</code> 后再启动。</li>
+    </ol>
+  </div>
+
+</div>
+
+<script>
+let currentData = null;
+let quickNotesData = { notes: [], counts: { total: 0, '问题': 0, '笔记': 0, '待整理': 0 } };
+let quickNotesFilter = '全部';
+let docsMermaidOverlayKeyHandler = null;
+
+if (typeof mermaid !== 'undefined') {
+  mermaid.initialize({ startOnLoad: false, securityLevel: 'strict' });
+}
+
+// ── Tab 切换 ──
+document.querySelectorAll('.tab').forEach(t => {
+  t.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+    document.querySelectorAll('.panel').forEach(x => x.classList.remove('active'));
+    t.classList.add('active');
+    document.getElementById(t.dataset.tab).classList.add('active');
+    if (t.dataset.tab === 'graph' && currentData) renderGraph(currentData);
+    if (t.dataset.tab === 'docs'  && currentData) renderDocs(currentData);
+    if (t.dataset.tab === 'quicknotes') renderQuickNotes();
+    // 切换到图谱 tab 时同步按钮状态
+    if (t.dataset.tab === 'graph') {
+      const btnDep = document.getElementById('btn-dep');
+      const btnCall = document.getElementById('btn-call');
+      if (btnDep && btnCall) {
+        btnDep.classList.toggle('active', graphMode === 'dep');
+        btnCall.classList.toggle('active', graphMode === 'call');
+      }
+    }
+    updateQuickNoteSource();
+  });
+});
+
+// ── SSE 实时更新 ──
+const es = new EventSource('/api/stream');
+es.onmessage = e => { currentData = JSON.parse(e.data); render(currentData); };
+es.onerror = () => {
+  // fallback: 轮询
+  fetch('/api/data').then(r => r.json()).then(d => { currentData = d; render(d); });
+};
+
+// ── 初始加载 ──
+fetch('/api/data').then(r => r.json()).then(d => { currentData = d; render(d); });
+loadQuickNotes();
+
+function render(d) {
+  if (d.error) return;
+  document.getElementById('last-updated').textContent = '更新于 ' + d.last_updated;
+  renderOverview(d);
+  renderNodes(d);
+  renderQuestions(d);
+  renderQaLog(d);
+  renderJournal(d);
+  if (document.getElementById('graph').classList.contains('active')) renderGraph(d);
+  if (document.getElementById('docs').classList.contains('active'))  renderDocs(d);
+}
+
+// ── 总览 ──
+function parseFocusEntry(entry) {
+  const raw = String(entry || '').trim();
+  const match = raw.match(/^(.+?)[：:]\s*(.*)$/);
+  if (!match) return { title: '当前学习焦点', body: raw };
+  const title = match[1].replace(/\*\*/g, '').trim() || '当前学习焦点';
+  const body = match[2].trim();
+  return { title, body };
+}
+
+function truncateFocusBody(text, maxLength) {
+  const raw = String(text || '').trim();
+  if (raw.length <= maxLength) return raw;
+  return raw.slice(0, maxLength).trimEnd() + '…';
+}
+
+function getSubsystemProgressLabel(name, stat) {
+  if (name === 'unclassified') return '暂存整理';
+  const total = stat.total || 0;
+  if (!total) return '刚开始';
+  if (stat.unknown >= Math.max(stat.mastered, stat.exploring)) return '基础建设中';
+  if (stat.exploring >= stat.mastered && stat.exploring > 0) return '主线推进中';
+  if (stat.mastered >= total * 0.6) return '稳定沉淀';
+  return '持续推进';
+}
+
+function escapeOverviewHtml(value) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+function overviewNumber(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : 0;
+}
+
+function renderOverview(d) {
+  d = d || {};
+  const km = d.knowledge_map || { all_nodes: [], subsystems: {}, stats: {} };
+  const oq = d.questions || { counts: { CRITICAL: 0, MEDIUM: 0, LOW: 0, resolved: 0 } };
+  const counts = oq.counts || {};
+  const criticalCount = overviewNumber(counts.CRITICAL);
+  const mediumCount = overviewNumber(counts.MEDIUM);
+  const lowCount = overviewNumber(counts.LOW);
+  const resolvedCount = overviewNumber(counts.resolved);
+  const all = km.all_nodes || [];
+  const subsystems = km.subsystems || {};
+  const stats = km.stats || {};
+  const mastered = all.filter(n => n.status === 'mastered').length;
+  const exploring = all.filter(n => n.status === 'exploring').length;
+  const unknown = all.filter(n => n.status === 'unknown').length;
+  const total = all.length;
+  const pct = total ? Math.round((mastered + exploring * 0.5) / total * 100) : 0;
+  const openTotal = criticalCount + mediumCount + lowCount;
+  const focusEntries = d.focus || [];
+  const primaryFocus = parseFocusEntry(focusEntries[0]);
+  const primaryPreview = truncateFocusBody(primaryFocus.body, 260);
+  const hasFullFocus = primaryFocus.body && primaryFocus.body !== primaryPreview;
+  const nextTitle = criticalCount > 0 ? '优先处理 CRITICAL 问题' : '推进探索中节点';
+
+  let html = `<div class="overview-focus-layout">
+    <div class="focus-card">
+      <div class="focus-label">当前学习焦点</div>
+      <div class="focus-title">${escapeOverviewHtml(primaryFocus.title)}</div>
+      <div class="focus-body">${primaryPreview ? escapeOverviewHtml(primaryPreview) : '暂无焦点记录'}</div>
+      ${hasFullFocus ? `<details class="focus-details">
+        <summary>完整描述</summary>
+        <div class="focus-details-body">${escapeOverviewHtml(primaryFocus.body)}</div>
+      </details>` : ''}
+    </div>
+    <div class="attention-card">
+      <div class="focus-label">下一步</div>
+      <div class="attention-title">${nextTitle}</div>
+      <div class="attention-grid">
+        <div class="attention-stat">
+          <div class="attention-stat-value">${criticalCount}</div>
+          <div class="attention-stat-label">CRITICAL</div>
+        </div>
+        <div class="attention-stat">
+          <div class="attention-stat-value">${mediumCount}</div>
+          <div class="attention-stat-label">MEDIUM</div>
+        </div>
+        <div class="attention-stat">
+          <div class="attention-stat-value">${lowCount}</div>
+          <div class="attention-stat-label">LOW</div>
+        </div>
+      </div>
+    </div>
+  </div>`;
+
+  html += `<div class="cards overview-metrics">
+    <div class="card"><div class="card-title">总体进度</div>
+      <div class="card-value">${pct}%</div>
+      <div class="card-sub">${mastered} 掌握 · ${exploring} 探索中 · ${unknown} 未知</div></div>
+    <div class="card"><div class="card-title">知识节点</div>
+      <div class="card-value">${total}</div>
+      <div class="card-sub">覆盖 ${Object.keys(subsystems).length} 个子系统</div></div>
+    <div class="card"><div class="card-title">开放问题</div>
+      <div class="card-value" style="color:${criticalCount > 0 ? 'var(--critical)' : 'var(--text)'}">${openTotal}</div>
+      <div class="card-sub">CRITICAL: ${criticalCount} · MEDIUM: ${mediumCount}</div></div>
+    <div class="card"><div class="card-title">已解答问题</div>
+      <div class="card-value" style="color:var(--mastered)">${resolvedCount}</div>
+      <div class="card-sub">共 ${openTotal+resolvedCount} 个问题记录</div></div>
+  </div>`;
+
+  if (focusEntries.length > 1) {
+    html += `<div class="overview-section-title">其他学习焦点</div>
+    <div class="progress-block-grid">`;
+    for (const entry of focusEntries.slice(1)) {
+      const focus = parseFocusEntry(entry);
+      const preview = truncateFocusBody(focus.body, 160);
+      html += `<div class="progress-block">
+        <div class="progress-block-head">
+          <div class="progress-block-name">${escapeOverviewHtml(focus.title)}</div>
+        </div>
+        <div class="focus-body">${preview ? escapeOverviewHtml(preview) : '暂无焦点记录'}</div>
+      </div>`;
+    }
+    html += `</div>`;
+  }
+
+  html += `<div class="overview-section-title">学习进度分块</div>
+  <div class="progress-block-grid">`;
+  for (const [name, rawStat] of Object.entries(stats)) {
+    const stat = rawStat || {};
+    const statMastered = overviewNumber(stat.mastered);
+    const statExploring = overviewNumber(stat.exploring);
+    const statUnknown = overviewNumber(stat.unknown);
+    const statQuestioned = overviewNumber(stat.questioned);
+    const statTotal = overviewNumber(stat.total);
+    const avgConfidence = overviewNumber(stat.avg_confidence);
+    const safeStat = { mastered: statMastered, exploring: statExploring, unknown: statUnknown, questioned: statQuestioned, total: statTotal };
+    const mp = statTotal ? statMastered / statTotal * 100 : 0;
+    const ep = statTotal ? statExploring / statTotal * 100 : 0;
+    const up = statTotal ? statUnknown / statTotal * 100 : 0;
+    const qp = statTotal ? statQuestioned / statTotal * 100 : 0;
+    const statusLabel = getSubsystemProgressLabel(name, safeStat);
+    html += `<div class="progress-block">
+      <div class="progress-block-head">
+        <div class="progress-block-name">${escapeOverviewHtml(name)}</div>
+        <div class="progress-status">${escapeOverviewHtml(statusLabel)}</div>
+      </div>
+      <div class="prog-bar">
+        <div class="prog-seg" style="width:${mp}%;background:var(--mastered)"></div>
+        <div class="prog-seg" style="width:${ep}%;background:var(--exploring)"></div>
+        <div class="prog-seg" style="width:${up}%;background:var(--unknown)"></div>
+        <div class="prog-seg" style="width:${qp}%;background:var(--questioned)"></div>
+      </div>
+      <div class="progress-block-meta">
+        <span><span class="dot" style="background:var(--mastered)"></span>掌握 ${statMastered}</span>
+        <span><span class="dot" style="background:var(--exploring)"></span>探索 ${statExploring}</span>
+        <span><span class="dot" style="background:var(--unknown)"></span>未知 ${statUnknown}</span>
+        ${statQuestioned > 0 ? `<span><span class="dot" style="background:var(--questioned)"></span>疑问 ${statQuestioned}</span>` : ''}
+        ${avgConfidence > 0 ? `<span>均 ${avgConfidence}</span>` : ''}
+      </div>
+    </div>`;
+  }
+  html += `</div>`;
+  document.getElementById('overview').innerHTML = html;
+}
+
+// ── 知识图谱 ──
+let graphMode = 'dep';  // 'dep' = 知识依赖图  'call' = 调用链路图
+let graphState = null;  // { svg, zoomBehavior, zoomLayer, node, allNodes, W, H } — 供搜索定位使用
+let focusedNodeName = null;  // 当前搜索命中并高亮的节点名
+let hiddenSubsystems = new Set();  // 子系统过滤：被隐藏的子系统标签集合
+let egoMode = false;   // 聚焦模式：只显示 focusedNodeName 的 N 跳邻居
+let egoHops = 2;       // 聚焦模式的跳数
+let egoMaxHops = 3;    // 当前聚焦节点在图中实际可达的最大跳数（自适应下拉框上限）
+let graphAllNodesFull = [];  // 当前图谱模式下未经筛选的完整节点列表（供搜索使用）
+let pendingFocusName = null;  // 因筛选/聚焦模式变化需要重新渲染后才能定位的节点名
+let chainDetailNode = null;   // 调用链路图点击选中的节点名（调用链详情面板的目标）
+let checkedChainIndices = null;  // Set<int>：当前节点下勾选的调用链索引；null = 未点击过节点/全选=不过滤
+
+function renderGraph(d) {
+  const km = d.knowledge_map;
+
+  // 构建容器（只建一次）
+  if (!document.getElementById('graph-container')) {
+    document.getElementById('graph').innerHTML =
+      `<div style="display:flex;gap:8px;margin-bottom:10px;align-items:center">
+         <button class="filter-btn active" id="btn-dep"
+           onclick="graphMode='dep';focusedNodeName=null;egoMode=false;hiddenSubsystems=new Set();chainDetailNode=null;checkedChainIndices=null;document.getElementById('btn-dep').classList.add('active');document.getElementById('btn-call').classList.remove('active');renderGraph(currentData)">
+           知识依赖图
+         </button>
+         <button class="filter-btn" id="btn-call"
+           onclick="graphMode='call';focusedNodeName=null;egoMode=false;hiddenSubsystems=new Set();chainDetailNode=null;checkedChainIndices=null;document.getElementById('btn-call').classList.add('active');document.getElementById('btn-dep').classList.remove('active');renderGraph(currentData)">
+           调用链路图
+         </button>
+         <span id="graph-mode-desc" style="font-size:11px;color:var(--muted);margin-left:4px"></span>
+         <div class="graph-search-box">
+           <input type="text" id="graph-search-input" placeholder="搜索节点… (Enter 定位)" autocomplete="off">
+           <div class="search-suggestions" id="graph-search-suggestions"></div>
+         </div>
+         <button class="filter-btn" style="opacity:.7" onclick="resetGraphView()">重置视图</button>
+         <button class="filter-btn" style="opacity:.7" onclick="openManualChainModal()">+ 手动添加调用链</button>
+       </div>
+       <div id="manual-chain-modal-root"></div>
+       <div id="graph-subsys-filter"></div>
+       <div id="graph-ego-control"></div>
+       <div id="graph-container"><svg id="graph-svg"></svg>
+       <div class="graph-legend">
+         <span><span class="dot" style="background:var(--mastered)"></span>掌握</span>
+         <span><span class="dot" style="background:var(--exploring)"></span>探索中</span>
+         <span><span class="dot" style="background:var(--unknown)"></span>未知</span>
+         <span><span class="dot" style="background:#8250df;opacity:.7"></span>笔记中出现</span>
+         <span style="margin-left:6px;border-left:1px solid var(--border);padding-left:8px">
+           <svg width="24" height="8"><line x1="0" y1="4" x2="24" y2="4" stroke="#0969da" stroke-width="1.5"/></svg> 调用关系
+         </span>
+         <span>
+           <svg width="24" height="8"><line x1="0" y1="4" x2="24" y2="4" stroke="#8c959f" stroke-width="1" stroke-dasharray="4,3"/></svg> 待学习
+         </span>
+       </div></div>
+       <div id="reading-order-panel"></div>
+       <div id="chain-detail-panel"></div>`;
+
+    // 窗口/容器尺寸变化时自动重绘
+    const container = document.getElementById('graph-container');
+    if (container && !container._roAttached) {
+      container._roAttached = true;
+      new ResizeObserver(() => { if (currentData) renderGraph(currentData); }).observe(container);
+    }
+
+    initGraphSearch();
+  }
+
+  // 更新模式描述
+  const modeDesc = document.getElementById('graph-mode-desc');
+  if (modeDesc) {
+    modeDesc.textContent = graphMode === 'dep'
+      ? '来源：dep-graph.md，反映学习依赖顺序'
+      : '来源：learn/ 笔记调用链章节，反映函数真实调用关系';
+  }
+
+  const el = document.getElementById('graph-svg');
+  el.innerHTML = '';
+  // d3-zoom 把缩放/平移状态存在这个 DOM 节点的 __zoom 属性上，innerHTML='' 只清空子元素，
+  // 不会清掉它——如果不重置，下面重新 svg.call(zoomBehavior) 绑定的新缩放行为会读到上一次
+  // 残留的 __zoom 当作起点，用户下一次滚轮/拖拽时两次状态错位叠加，图谱可能瞬间跳到画布外
+  delete el.__zoom;
+  const W = el.clientWidth || 800, H = el.clientHeight || 500;
+
+  // ── 根据模式选择数据 ──
+  let edgeData, allNodes, nodeMap;
+  const colorMap = { mastered: '#1a7f37', exploring: '#9a6700', unknown: '#8c959f',
+                     questioned: '#cf222e', note: '#8250df' };
+
+  if (graphMode === 'dep') {
+    // 知识依赖图：来自 dep-graph.md
+    edgeData = km.edges || [];
+    nodeMap = {};
+    km.all_nodes.forEach(n => nodeMap[n.name] = n);
+    const relevantNames = new Set();
+    edgeData.forEach(e => { relevantNames.add(e.source); relevantNames.add(e.target); });
+    km.all_nodes.filter(n => n.status === 'exploring' || n.status === 'mastered')
+                .forEach(n => relevantNames.add(n.name));
+    if (focusedNodeName) relevantNames.add(focusedNodeName);
+    allNodes = [...relevantNames].map(name => nodeMap[name]).filter(Boolean)
+                .map(n => ({...n, id: n.name}));
+  } else {
+    // 调用链路图：来自 learn/*.md 调用链章节
+    const cc = d.call_chains || { edges: [], nodes: [] };
+    edgeData = cc.edges || [];
+    nodeMap = {};
+    // 先用 knowledge.md 节点（有状态信息）
+    km.all_nodes.forEach(n => nodeMap[n.name] = n);
+    // 调用链里出现但 knowledge.md 没有的节点，用 note 状态（紫色）
+    cc.nodes.forEach(n => {
+      if (!nodeMap[n.name]) nodeMap[n.name] = n;
+    });
+    const ccNames = new Set();
+    edgeData.forEach(e => { ccNames.add(e.source); ccNames.add(e.target); });
+    allNodes = [...ccNames].map(name => nodeMap[name] || { name, id: name, type: 'function',
+      status: 'note', confidence: 0, section: '' }).map(n => ({...n, id: n.name}));
+  }
+
+  if (!allNodes.length) {
+    el.innerHTML = '<text x="50%" y="50%" text-anchor="middle" fill="#8c959f">暂无节点数据</text>';
+    if (graphMode === 'dep') renderReadingOrder(km.reading_order || []);
+    else document.getElementById('reading-order-panel').innerHTML = '';
+    // 切换到依赖图时清空调用链详情
+    const cdp = document.getElementById('chain-detail-panel');
+    if (cdp && graphMode === 'dep') cdp.innerHTML = '';
+    document.getElementById('graph-subsys-filter').innerHTML = '';
+    document.getElementById('graph-ego-control').innerHTML = '';
+    return;
+  }
+
+  const getSubsys = n => n.subsystem || (n.status === 'note' ? 'note' : 'unknown');
+  graphAllNodesFull = allNodes;
+
+  // ── 子系统过滤器 ──
+  renderSubsysFilter(allNodes, getSubsys);
+  allNodes = allNodes.filter(n => !hiddenSubsystems.has(getSubsys(n)));
+
+  // ── 聚焦模式（ego-graph）：只保留 focusedNodeName 的 N 跳邻居 ──
+  // 邻接表在"计算自适应跳数上限"和"实际过滤"两步都要用，只建一次
+  let egoAdjacency = null;
+  if (focusedNodeName && allNodes.some(n => n.id === focusedNodeName)) {
+    egoAdjacency = {};
+    edgeData.forEach(e => {
+      (egoAdjacency[e.source] ??= new Set()).add(e.target);
+      (egoAdjacency[e.target] ??= new Set()).add(e.source);
+    });
+    egoMaxHops = bfsEccentricity(focusedNodeName, egoAdjacency);
+    egoHops = Math.min(Math.max(egoHops, 1), egoMaxHops);
+  }
+  renderEgoControl();
+  if (egoMode && egoAdjacency) {
+    const keep = new Set([focusedNodeName]);
+    let frontier = [focusedNodeName];
+    for (let hop = 0; hop < egoHops; hop++) {
+      const next = [];
+      frontier.forEach(name => {
+        (egoAdjacency[name] || new Set()).forEach(neighbor => {
+          if (!keep.has(neighbor)) { keep.add(neighbor); next.push(neighbor); }
+        });
+      });
+      frontier = next;
+    }
+    allNodes = allNodes.filter(n => keep.has(n.id));
+  }
+
+  // ── 调用链筛选：点击节点后勾选/取消勾选具体调用链，只保留勾选链路的节点并集 ──
+  if (graphMode === 'call' && chainDetailNode && checkedChainIndices) {
+    const cc = d.call_chains || {};
+    const idxList = (cc.node_chain_map || {})[chainDetailNode] || [];
+    const isFiltering = checkedChainIndices.size < idxList.length;
+    if (isFiltering) {
+      const keep = new Set();
+      checkedChainIndices.forEach(idx => {
+        (cc.chains[idx]?.nodes || []).forEach(nm => keep.add(nm));
+      });
+      allNodes = allNodes.filter(n => keep.has(n.id));
+    }
+  }
+
+  if (!allNodes.length) {
+    el.innerHTML = '<text x="50%" y="50%" text-anchor="middle" fill="#8c959f">当前筛选下无匹配节点</text>';
+    return;
+  }
+
+  const nodeSet = new Set(allNodes.map(n => n.id));
+  const links = edgeData
+    .filter(e => nodeSet.has(e.source) && nodeSet.has(e.target))
+    .map(e => ({...e}));
+
+  const svg = d3.select('#graph-svg');
+  const zoomLayer = svg.append('g').attr('class', 'zoom-layer');
+  const zoomBehavior = d3.zoom().scaleExtent([0.2, 4])
+    .on('zoom', ev => zoomLayer.attr('transform', ev.transform));
+  svg.call(zoomBehavior);
+
+  // 箭头 marker
+  svg.append('defs').append('marker')
+    .attr('id', 'arrow').attr('viewBox', '0 -4 8 8')
+    .attr('refX', 14).attr('refY', 0)
+    .attr('markerWidth', 6).attr('markerHeight', 6)
+    .attr('orient', 'auto')
+    .append('path').attr('d', 'M0,-4L8,0L0,4').attr('fill', '#0969da').attr('opacity', .5);
+  svg.append('defs').append('marker')
+    .attr('id', 'arrow-unknown').attr('viewBox', '0 -4 8 8')
+    .attr('refX', 14).attr('refY', 0)
+    .attr('markerWidth', 6).attr('markerHeight', 6)
+    .attr('orient', 'auto')
+    .append('path').attr('d', 'M0,-4L8,0L0,4').attr('fill', '#8c959f').attr('opacity', .6);
+
+  const sim = d3.forceSimulation(allNodes)
+    .force('link', d3.forceLink(links).id(n => n.id).distance(graphMode === 'call' ? 120 : 100))
+    .force('charge', d3.forceManyBody().strength(graphMode === 'call' ? -300 : -220))
+    .force('center', d3.forceCenter(W/2, H/2))
+    .force('collision', d3.forceCollide(38));
+
+  const link = zoomLayer.append('g').selectAll('line').data(links).join('line')
+    .attr('class', l => {
+      const src = nodeMap[l.source.id || l.source];
+      const tgt = nodeMap[l.target.id || l.target];
+      const bothKnown = src?.status !== 'note' && tgt?.status !== 'note';
+      return (src?.status === 'unknown' || tgt?.status === 'unknown' || !bothKnown)
+        ? 'link-unknown' : 'link-calls';
+    })
+    .attr('marker-end', l => {
+      if (graphMode === 'call') {
+        // 调用链路图：边的方向来自解析出的树形父子关系，与节点掌握状态无关，
+        // 一律画箭头标出真实调用方向；箭头颜色跟随线的样式（已学过=蓝，未学过=灰）
+        const src = nodeMap[l.source.id || l.source];
+        const tgt = nodeMap[l.target.id || l.target];
+        const bothKnown = src?.status !== 'note' && tgt?.status !== 'note';
+        return (src?.status === 'unknown' || tgt?.status === 'unknown' || !bothKnown)
+          ? 'url(#arrow-unknown)' : 'url(#arrow)';
+      }
+      // 知识依赖图：保持原逻辑，只有两端都已学过才画箭头
+      const src = nodeMap[l.source.id || l.source];
+      const tgt = nodeMap[l.target.id || l.target];
+      const bothKnown = src?.status !== 'note' && tgt?.status !== 'note';
+      return (src?.status === 'unknown' || tgt?.status === 'unknown' || !bothKnown)
+        ? '' : 'url(#arrow)';
+    });
+
+  const node = zoomLayer.append('g').selectAll('g').data(allNodes).join('g').attr('class','node')
+    .call(d3.drag()
+      .on('start', (ev,n) => { if(!ev.active) sim.alphaTarget(.3).restart(); n.fx=n.x; n.fy=n.y; })
+      .on('drag',  (ev,n) => { n.fx=ev.x; n.fy=ev.y; })
+      .on('end',   (ev,n) => { if(!ev.active) sim.alphaTarget(0); n.fx=null; n.fy=null; }));
+
+  // 调用链路图模式下，点击节点展示详情
+  if (graphMode === 'call') {
+    node.on('click', (ev, n) => {
+      ev.stopPropagation();
+      selectChainDetailNode(n.name, d.call_chains || {});
+    });
+    // 点击空白处清空
+    svg.on('click', () => {
+      chainDetailNode = null;
+      checkedChainIndices = null;
+      const p = document.getElementById('chain-detail-panel');
+      if (p) p.innerHTML = '';
+    });
+  } else {
+    node.on('click', null);
+    svg.on('click', null);
+    const p = document.getElementById('chain-detail-panel');
+    if (p) p.innerHTML = '';
+  }
+
+  // hover 高亮：相连节点/边保留，其余暗下去
+  const linkedNodes = new Set();
+  node.on('mouseover', (ev, n) => {
+    linkedNodes.clear();
+    linkedNodes.add(n.id);
+    links.forEach(l => {
+      const s = l.source.id || l.source;
+      const t = l.target.id || l.target;
+      if (s === n.id || t === n.id) { linkedNodes.add(s); linkedNodes.add(t); }
+    });
+    node.style('opacity', d => linkedNodes.has(d.id) ? 1 : 0.08);
+    link.style('opacity', l => {
+      const s = l.source.id || l.source;
+      const t = l.target.id || l.target;
+      return (s === n.id || t === n.id) ? 1 : 0.04;
+    });
+  }).on('mouseout', () => {
+    node.style('opacity', null);
+    link.style('opacity', null);
+  });
+
+  // 结构体用三角形，其余用圆点
+  node.each(function(n) {
+    const g = d3.select(this);
+    const r = n.status === 'mastered' ? 10 : n.status === 'exploring' ? 8 :
+              n.status === 'note' ? 6 : 5;
+    const fill = colorMap[n.status] || '#8c959f';
+    const opacity = n.status === 'unknown' ? 0.5 : n.status === 'note' ? 0.65 : 1;
+    const stroke = n.status === 'note' ? '#8250df' : 'var(--border)';
+    if (n.type === 'struct') {
+      // 等边三角形，r 为外接圆半径
+      const h = r * Math.sqrt(3);
+      g.append('path')
+        .attr('d', `M0,${-r} L${h/2},${r/2} L${-h/2},${r/2} Z`)
+        .style('fill', fill).style('opacity', opacity).style('stroke', stroke).style('stroke-width', '1.5px');
+    } else {
+      g.append('circle')
+        .attr('r', r)
+        .style('fill', fill).style('opacity', opacity).style('stroke', stroke).style('stroke-width', '1.5px');
+    }
+  });
+
+  // 函数名过长时拆成两行显示
+  node.each(function(n) {
+    const g = d3.select(this);
+    const name = n.name;
+    const maxLen = 14;
+    const color = (n.status === 'unknown' || n.status === 'note') ? '#8c959f' : '#1f2328';
+    const weight = n.status === 'mastered' ? '600' : '400';
+    if (name.length <= maxLen) {
+      g.append('text')
+        .attr('dy', '-14px').attr('text-anchor', 'middle')
+        .text(name)
+        .style('font-size', '10px').style('fill', color).style('font-weight', weight);
+    } else {
+      // 在下划线处拆行，或强制在 maxLen 处截断
+      const mid = name.lastIndexOf('_', maxLen);
+      const split = mid > 3 ? mid + 1 : maxLen;
+      const line1 = name.slice(0, split);
+      const line2 = name.slice(split).length > maxLen ? name.slice(split, split + maxLen) + '…' : name.slice(split);
+      g.append('text')
+        .attr('dy', '-20px').attr('text-anchor', 'middle')
+        .text(line1)
+        .style('font-size', '10px').style('fill', color).style('font-weight', weight);
+      g.append('text')
+        .attr('dy', '-9px').attr('text-anchor', 'middle')
+        .text(line2)
+        .style('font-size', '10px').style('fill', color).style('font-weight', weight);
+    }
+  });
+
+  node.append('title').text(n =>
+    `${n.name}\n${n.type || 'function'} · ${n.status}${n.confidence ? ' · 置信度 ' + n.confidence : ''}\n${n.section || '来自笔记调用链'}`);
+
+  // 保留搜索命中的高亮（数据刷新重绘后依然生效）
+  if (focusedNodeName) node.classed('search-hit', n => n.id === focusedNodeName);
+
+  graphState = { svg, zoomBehavior, zoomLayer, node, allNodes: graphAllNodesFull, visibleIds: nodeSet, W, H };
+
+  sim.on('tick', () => {
+    link.attr('x1', l=>l.source.x).attr('y1', l=>l.source.y)
+        .attr('x2', l=>l.target.x).attr('y2', l=>l.target.y);
+    node.attr('transform', n => `translate(${n.x},${n.y})`);
+  });
+
+  // 因筛选/聚焦模式变化而重绘时，等布局稳定后再定位到目标节点
+  sim.on('end', () => {
+    if (pendingFocusName) {
+      const nm = pendingFocusName;
+      pendingFocusName = null;
+      panToNode(nm);
+    }
+  });
+
+  // 推荐阅读顺序只在依赖图模式下显示
+  if (graphMode === 'dep') {
+    renderReadingOrder(km.reading_order || []);
+  } else {
+    document.getElementById('reading-order-panel').innerHTML = '';
+  }
+
+  // 保留调用链详情面板（数据刷新/勾选切换重绘后依然生效）
+  if (graphMode === 'call' && chainDetailNode) {
+    renderChainDetail(chainDetailNode, d.call_chains || {});
+  }
+}
+
+// ── 图谱节点搜索 ──
+function initGraphSearch() {
+  const input = document.getElementById('graph-search-input');
+  const suggBox = document.getElementById('graph-search-suggestions');
+  if (!input || input._searchBound) return;
+  input._searchBound = true;
+
+  input.addEventListener('input', () => updateSearchSuggestions(input.value.trim()));
+  input.addEventListener('keydown', ev => {
+    if (ev.key === 'Enter') {
+      const first = suggBox.querySelector('.search-item');
+      if (first) {
+        focusNode(first.dataset.name);
+        input.value = first.dataset.name;
+        suggBox.classList.remove('show');
+      }
+    } else if (ev.key === 'Escape') {
+      suggBox.classList.remove('show');
+      input.blur();
+    }
+  });
+  input.addEventListener('focus', () => {
+    if (input.value.trim()) updateSearchSuggestions(input.value.trim());
+  });
+  document.addEventListener('click', ev => {
+    if (!ev.target.closest('.graph-search-box')) suggBox.classList.remove('show');
+  });
+}
+
+function updateSearchSuggestions(query) {
+  const suggBox = document.getElementById('graph-search-suggestions');
+  if (!suggBox) return;
+  if (!query) { suggBox.classList.remove('show'); suggBox.innerHTML = ''; return; }
+
+  const nodes = (graphState && graphState.allNodes) || [];
+  const q = query.toLowerCase();
+  const matches = nodes.filter(n => n.name.toLowerCase().includes(q));
+  matches.sort((a, b) => {
+    const aStarts = a.name.toLowerCase().startsWith(q) ? 0 : 1;
+    const bStarts = b.name.toLowerCase().startsWith(q) ? 0 : 1;
+    return aStarts - bStarts || a.name.length - b.name.length;
+  });
+
+  if (!matches.length) {
+    suggBox.innerHTML = `<div class="search-empty">未找到匹配节点（当前图谱模式下）</div>`;
+    suggBox.classList.add('show');
+    return;
+  }
+
+  suggBox.innerHTML = matches.slice(0, 30).map(n => `<div class="search-item" data-name="${n.name}"
+      onclick="focusNode('${n.name}');document.getElementById('graph-search-input').value='${n.name}';document.getElementById('graph-search-suggestions').classList.remove('show')">
+      <span>${n.name}</span><span class="si-status">${n.status || ''}</span>
+    </div>`).join('');
+  suggBox.classList.add('show');
+}
+
+function focusNode(name) {
+  if (!graphState) return;
+  const target = graphAllNodesFull.find(n => n.id === name);
+  if (!target) return;
+
+  focusedNodeName = name;
+  renderEgoControl();  // 无论是否触发完整重绘，聚焦控件都要跟着 focusedNodeName 更新
+
+  // 节点当前不可见（被子系统过滤器隐藏）→ 自动取消对应过滤
+  const subsys = target.subsystem || (target.status === 'note' ? 'note' : 'unknown');
+  let needsRerender = false;
+  if (hiddenSubsystems.has(subsys)) { hiddenSubsystems.delete(subsys); needsRerender = true; }
+  if (egoMode && !graphState.visibleIds.has(name)) needsRerender = true;
+
+  if (needsRerender) {
+    pendingFocusName = name;
+    renderGraph(currentData);
+    return;
+  }
+
+  panToNode(name);
+}
+
+function panToNode(name) {
+  if (!graphState) return;
+  const target = graphState.node.data().find(n => n.id === name);
+  if (!target) return;
+
+  graphState.node.classed('search-hit', n => n.id === name);
+
+  const scale = 1.8;
+  const transform = d3.zoomIdentity
+    .translate(graphState.W / 2 - scale * target.x, graphState.H / 2 - scale * target.y)
+    .scale(scale);
+  graphState.svg.transition().duration(600).call(graphState.zoomBehavior.transform, transform);
+}
+
+// 手动恢复视图：把缩放/平移重置为初始状态，用于滚轮/拖拽把图谱弄丢时的兜底
+function resetGraphView() {
+  if (!graphState) return;
+  graphState.svg.transition().duration(400).call(graphState.zoomBehavior.transform, d3.zoomIdentity);
+}
+
+// ── 手动添加调用链 ──
+// 与 server.py 的 extract_tree_node_name / parse_tree_lines_to_edges 保持同一套规则，
+// 保证保存前的预览结果和后端实际解析出来的边完全一致
+const MANUAL_SKIP_NAMES = new Set(['asm','goto','return','true','false','NULL',
+  'IS_ENABLED','BUG','WARN','nop','patch','boot',
+  'for','if','else','while','do','switch','case',
+  'break','continue','struct','int','void','static',
+  'const','unsigned','long','char','include','define']);
+const MANUAL_SKIP_PATTERNS = [
+  /^\w*WARN(_ON)?(_ONCE)?$/, /^\w*BUG_ON$/,
+  /^lockdep_assert\w*$/, /^might_sleep\w*$/, /^static_assert$/,
+];
+
+function manualTreeIndentLevel(line) {
+  const normalized = line.replace(/─+/g, '─');
+  const m = normalized.match(/^[│├└─╿┌┐┘┴┬┼ ]*/);
+  return m ? m[0].length : 0;
+}
+
+function manualExtractName(rawIn) {
+  let raw = rawIn.replace(/^[\s─\-╿│├└┌┐┘┴┬┼]+/, '').trim();
+  for (const ch of ['←', '→', '//', '#', '/*']) {
+    const pos = raw.indexOf(ch);
+    if (pos > 0) raw = raw.slice(0, pos).trim();
+  }
+  while (true) {
+    const m = raw.match(/^\[[^\]]*\]\s*/);
+    if (!m) break;
+    raw = raw.slice(m[0].length).trim();
+  }
+  const paren = raw.indexOf('(');
+  if (paren > 0) raw = raw.slice(0, paren).trim();
+  const bracket = raw.indexOf('[');
+  if (bracket > 0) raw = raw.slice(0, bracket).trim();
+  raw = raw.replace(/[)>:,;{]+$/, '').trim();
+  // 纯"文件名.c:行号"续行（长注释换行折断后单独成行），不是函数名
+  if (/^[a-zA-Z_][a-zA-Z0-9_./]*\.[ch](:\d|$|-\d)/.test(raw)) return '';
+  const name = raw ? raw.split(/\s+/)[0].split('.')[0] : '';
+  if (!/^[a-zA-Z_][a-zA-Z0-9_]{2,}$/.test(name)) return '';
+  if (MANUAL_SKIP_NAMES.has(name)) return '';
+  if (MANUAL_SKIP_PATTERNS.some(p => p.test(name))) return '';
+  return name;
+}
+
+function manualParseTreeLines(lines) {
+  const edges = [];
+  const orderedNames = [];
+  const seen = new Set();
+  let stack = [];  // [[level, name_or_null]]
+
+  for (const line of lines) {
+    const stripped = line.replace(/\s+$/, '');
+    if (!stripped.trim()) { stack = []; continue; }
+
+    const level = manualTreeIndentLevel(stripped);
+    const name = manualExtractName(stripped);
+
+    while (stack.length && stack[stack.length - 1][0] >= level) stack.pop();
+
+    if (!name) {
+      stack.push([level, stack.length ? stack[stack.length - 1][1] : null]);
+      continue;
+    }
+
+    if (!seen.has(name)) { seen.add(name); orderedNames.push(name); }
+
+    if (stack.length && stack[stack.length - 1][1]) {
+      const src = stack[stack.length - 1][1], tgt = name;
+      if (!edges.some(e => e.source === src && e.target === tgt)) {
+        edges.push({ source: src, target: tgt, relation: 'calls' });
+      }
+    }
+    stack.push([level, name]);
+  }
+  return { edges, orderedNames };
+}
+
+function openManualChainModal() {
+  const root = document.getElementById('manual-chain-modal-root');
+  if (!root) return;
+  root.innerHTML = `
+    <div class="modal-overlay" id="manual-chain-overlay" onclick="if(event.target.id==='manual-chain-overlay')closeManualChainModal()">
+      <div class="modal-box">
+        <h3>手动添加调用链</h3>
+        <div class="modal-hint">粘贴 ASCII 调用树（比如 kernel-graph MCP 或笔记里的调用链代码块）。
+        方向按树形缩进解析：上层是调用者，下层是被调用者。已有节点会自动合并到现有图谱，不会产生重复节点。</div>
+        <input type="text" id="manual-chain-title" placeholder="标题（可选，不填自动生成）">
+        <textarea id="manual-chain-text" placeholder="粘贴调用树…" oninput="previewManualChain()"></textarea>
+        <div id="manual-chain-preview"></div>
+        <div class="modal-actions">
+          <button class="modal-btn" onclick="closeManualChainModal()">取消</button>
+          <button class="modal-btn modal-btn-primary" id="manual-chain-save-btn" onclick="saveManualChain()" disabled>保存</button>
+        </div>
+      </div>
+    </div>`;
+  document.getElementById('manual-chain-text').focus();
+}
+
+function closeManualChainModal() {
+  const root = document.getElementById('manual-chain-modal-root');
+  if (root) root.innerHTML = '';
+}
+
+function previewManualChain() {
+  const text = document.getElementById('manual-chain-text').value;
+  const preview = document.getElementById('manual-chain-preview');
+  const saveBtn = document.getElementById('manual-chain-save-btn');
+  if (!text.trim()) {
+    preview.innerHTML = '';
+    saveBtn.disabled = true;
+    return;
+  }
+  const { edges, orderedNames } = manualParseTreeLines(text.split('\n'));
+  if (!edges.length && !orderedNames.length) {
+    preview.innerHTML = `<div class="modal-preview"><div class="modal-preview-empty">未能解析出任何函数名或调用关系，检查格式是否是 ASCII 树形结构</div></div>`;
+    saveBtn.disabled = true;
+    return;
+  }
+  const nodeSet = new Set((graphAllNodesFull || []).map(n => n.id));
+  const newNodeCount = orderedNames.filter(n => !nodeSet.has(n)).length;
+  preview.innerHTML = `<div class="modal-preview">
+    <div style="margin-bottom:6px;color:var(--muted)">解析出 ${orderedNames.length} 个节点（${newNodeCount} 个是新节点，其余会合并到已有图谱）、${edges.length} 条调用关系：</div>
+    ${edges.map(e => `<div class="modal-preview-edge">${e.source} → ${e.target}</div>`).join('')}
+  </div>`;
+  saveBtn.disabled = false;
+}
+
+function saveManualChain() {
+  const text = document.getElementById('manual-chain-text').value;
+  const title = document.getElementById('manual-chain-title').value;
+  const saveBtn = document.getElementById('manual-chain-save-btn');
+  saveBtn.disabled = true;
+  saveBtn.textContent = '保存中…';
+
+  fetch('/api/manual-chain', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text, title }),
+  })
+    .then(r => r.json())
+    .then(res => {
+      if (res.error) {
+        document.getElementById('manual-chain-preview').insertAdjacentHTML(
+          'beforeend', `<div class="modal-error">保存失败：${res.error}</div>`);
+        saveBtn.disabled = false;
+        saveBtn.textContent = '保存';
+        return;
+      }
+      closeManualChainModal();
+      fetch('/api/data').then(r => r.json()).then(d => { currentData = d; render(d); });
+    })
+    .catch(err => {
+      document.getElementById('manual-chain-preview').insertAdjacentHTML(
+        'beforeend', `<div class="modal-error">保存失败：${err.message}</div>`);
+      saveBtn.disabled = false;
+      saveBtn.textContent = '保存';
+    });
+}
+
+// ── 子系统过滤器 ──
+function renderSubsysFilter(nodes, getSubsys) {
+  const box = document.getElementById('graph-subsys-filter');
+  if (!box) return;
+  const counts = {};
+  nodes.forEach(n => { const s = getSubsys(n); counts[s] = (counts[s] || 0) + 1; });
+  const subsystems = Object.keys(counts).sort();
+  if (subsystems.length <= 1) { box.innerHTML = ''; return; }
+
+  box.innerHTML = `<span style="font-size:11px;color:var(--muted);margin-right:2px">子系统：</span>` +
+    subsystems.map(s => {
+      const active = !hiddenSubsystems.has(s) ? 'active' : '';
+      return `<button class="filter-btn ${active}" onclick="toggleSubsys('${s}')">${s} ${counts[s]}</button>`;
+    }).join('') +
+    `<button class="filter-btn" onclick="hiddenSubsystems=new Set();renderGraph(currentData)" style="opacity:.7">全部显示</button>`;
+}
+
+function toggleSubsys(name) {
+  if (hiddenSubsystems.has(name)) hiddenSubsystems.delete(name);
+  else hiddenSubsystems.add(name);
+  renderGraph(currentData);
+}
+
+// ── 聚焦模式（ego-graph）控制 ──
+
+// BFS 求某节点在图中的离心率（能到达的最大跳数），用于自适应生成跳数下拉选项
+function bfsEccentricity(start, adjacency) {
+  const visited = new Map([[start, 0]]);
+  const queue = [start];
+  let maxHop = 0;
+  while (queue.length) {
+    const cur = queue.shift();
+    const curHop = visited.get(cur);
+    (adjacency[cur] || new Set()).forEach(neighbor => {
+      if (!visited.has(neighbor)) {
+        visited.set(neighbor, curHop + 1);
+        maxHop = Math.max(maxHop, curHop + 1);
+        queue.push(neighbor);
+      }
+    });
+  }
+  return Math.max(maxHop, 1);
+}
+
+function renderEgoControl() {
+  const box = document.getElementById('graph-ego-control');
+  if (!box) return;
+  if (!focusedNodeName) { box.innerHTML = ''; return; }
+
+  const hopOptions = Array.from({length: egoMaxHops}, (_, i) => i + 1);
+
+  box.innerHTML = `
+    <label style="font-size:12px;display:flex;align-items:center;gap:5px;cursor:pointer">
+      <input type="checkbox" ${egoMode ? 'checked' : ''} onchange="toggleEgoMode(this.checked)">
+      只看 <code style="font-size:11px">${focusedNodeName}</code> 的邻居
+    </label>
+    ${egoMode ? `
+    <select style="font-size:11px;padding:2px 6px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text)"
+            onchange="egoHops=parseInt(this.value);renderGraph(currentData)">
+      ${hopOptions.map(h => `<option value="${h}" ${h===egoHops?'selected':''}>${h} 跳</option>`).join('')}
+    </select>
+    <span style="font-size:11px;color:var(--muted)">该节点最远可达 ${egoMaxHops} 跳</span>` : ''}
+    <button class="filter-btn" style="opacity:.7" onclick="focusedNodeName=null;egoMode=false;document.getElementById('graph-search-input').value='';renderGraph(currentData)">清除聚焦</button>
+  `;
+}
+
+function toggleEgoMode(checked) {
+  egoMode = checked;
+  pendingFocusName = focusedNodeName;
+  renderGraph(currentData);
+}
+
+
+// ── 推荐阅读顺序 ──
+function renderReadingOrder(order) {
+  const panel = document.getElementById('reading-order-panel');
+  if (!panel || !order.length) return;
+
+  const colorMap = { mastered: 'var(--mastered)', exploring: 'var(--exploring)', unknown: 'var(--muted)', questioned: 'var(--questioned)' };
+  let html = `<div class="reading-order">
+    <h4>推荐学习顺序（基于调用依赖）</h4>`;
+
+  order.forEach((o, i) => {
+    const indent = o.depth > 0 ? `margin-left:${Math.min(o.depth * 12, 48)}px` : '';
+    html += `<div class="ro-item" style="${indent}">
+      <span class="ro-num">${i + 1}</span>
+      <span class="ro-name" style="color:${colorMap[o.status]}">${o.name}</span>
+      <span class="status-badge status-${o.status}" style="flex-shrink:0">${o.status}</span>
+      <span class="ro-reason">${o.reason}</span>
+    </div>`;
+  });
+
+  html += `</div>`;
+  panel.innerHTML = html;
+}
+
+// ── 调用链详情（点击节点触发）──
+
+// 点击图谱节点：切换详情目标节点，默认全选（=不过滤）
+function selectChainDetailNode(nodeName, callChains) {
+  chainDetailNode = nodeName;
+  const idxList = (callChains.node_chain_map || {})[nodeName] || [];
+  checkedChainIndices = new Set(idxList);  // 默认全选 = 正常（不过滤）状态
+  renderChainDetail(nodeName, callChains);
+}
+
+// 勾选框切换：更新选中集合，若产生真实过滤（勾选数 < 总数）则触发图谱重绘
+function toggleChainCheckbox(idx) {
+  if (checkedChainIndices.has(idx)) checkedChainIndices.delete(idx);
+  else checkedChainIndices.add(idx);
+  renderGraph(currentData);
+}
+
+function setAllChainsChecked(callChains, checked) {
+  const idxList = (callChains.node_chain_map || {})[chainDetailNode] || [];
+  checkedChainIndices = checked ? new Set(idxList) : new Set();
+  renderGraph(currentData);
+}
+
+function renderChainDetail(nodeName, callChains) {
+  const panel = document.getElementById('chain-detail-panel');
+  if (!panel) return;
+
+  const chainMap = callChains.node_chain_map || {};
+  const chains   = callChains.chains || [];
+  const idxList  = chainMap[nodeName] || [];
+
+  if (!idxList.length) {
+    panel.innerHTML = `<div class="chain-detail-box">
+      <h5>调用链详情 — ${nodeName}</h5>
+      <div style="color:var(--muted);font-size:12px">该节点暂无调用链记录</div>
+    </div>`;
+    return;
+  }
+
+  if (!checkedChainIndices) checkedChainIndices = new Set(idxList);
+
+  // 勾选栏
+  let selectHtml = `<div class="chain-select-bar">`;
+  idxList.forEach(idx => {
+    const c = chains[idx];
+    const short = c.title.replace(/（[ab]）/, '').replace('（a）', '').replace('（b）', '').trim();
+    const checked = checkedChainIndices.has(idx);
+    selectHtml += `<label class="chain-select-item ${checked ? 'checked' : ''}">
+      <input type="checkbox" ${checked ? 'checked' : ''} onchange="toggleChainCheckbox(${idx})">
+      ${short || `链路${idx+1}`}</label>`;
+  });
+  selectHtml += `
+    <button class="chain-select-all" onclick="setAllChainsChecked(currentData.call_chains, true)">全选</button>
+    <button class="chain-select-all" onclick="setAllChainsChecked(currentData.call_chains, false)">全不选</button>
+  </div>`;
+
+  const isFiltering = checkedChainIndices.size < idxList.length;
+  const filterNote = isFiltering
+    ? `<div style="font-size:11px;color:var(--accent);margin-bottom:8px">已过滤：图谱仅显示勾选链路涉及的节点</div>`
+    : `<div style="font-size:11px;color:var(--muted);margin-bottom:8px">全部勾选 = 正常状态（图谱不过滤）</div>`;
+
+  // 高亮当前节点名，堆叠展示每条勾选链路的代码
+  const escapeHtml = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const codeBlocks = [...checkedChainIndices].sort((a,b) => a-b).map(idx => {
+    const c = chains[idx];
+    const escaped = escapeHtml(c.text);
+    const highlighted = escaped.replace(
+      new RegExp(`\\b${nodeName}\\b`, 'g'),
+      `<span class="hl">${nodeName}</span>`
+    );
+    return `<div class="chain-code-block">
+      <div class="chain-code-title">${c.title || `链路${idx+1}`}</div>
+      <div class="chain-code">${highlighted}</div>
+    </div>`;
+  }).join('') || `<div style="color:var(--muted);font-size:12px">未勾选任何链路</div>`;
+
+  panel.innerHTML = `<div class="chain-detail-box">
+    <h5>调用链详情 — <code style="font-size:11px">${nodeName}</code></h5>
+    ${selectHtml}
+    ${filterNote}
+    ${codeBlocks}
+  </div>`;
+}
+
+// ── 节点列表 ──
+let nodeFilter = 'all';
+let nodeSubsysFilter = 'all';
+let nodeSearchQuery = '';
+
+function filterKnowledgeNodes(nodes, statusFilter, subsystemFilter, query) {
+  const q = String(query || '').trim().toLowerCase();
+  return (nodes || []).filter(n => {
+    if (statusFilter !== 'all' && n.status !== statusFilter) return false;
+    if (subsystemFilter !== 'all' && n.subsystem !== subsystemFilter) return false;
+    if (!q) return true;
+    return [n.name, n.subsystem, n.type, n.status, n.note, n.internal_doc, n.section]
+      .some(v => String(v || '').toLowerCase().includes(q));
+  });
+}
+
+function findNodeDocs(node, learnDocs) {
+  const nodeName = String(node?.name || '');
+  if (!nodeName) return [];
+  const subsystem = node?.subsystem;
+  const subsystemFiles = subsystem && learnDocs && learnDocs[subsystem] ? learnDocs[subsystem] : null;
+  const files = subsystemFiles || Object.values(learnDocs || {}).flat();
+  const lowerName = nodeName.toLowerCase();
+  const exact = [];
+  const mentioned = [];
+
+  (files || []).forEach(file => {
+    const fileName = String(file.name || '').toLowerCase();
+    const filePath = String(file.path || '').toLowerCase();
+    const content = String(file.content || '').toLowerCase();
+    if (fileName === lowerName || filePath.endsWith(`/${lowerName}.md`)) {
+      exact.push(file);
+    } else if (content.includes(lowerName)) {
+      mentioned.push(file);
+    }
+  });
+
+  return [...exact, ...mentioned].filter((file, idx, arr) =>
+    arr.findIndex(other => other.path === file.path) === idx
+  );
+}
+
+function renderNodes(d) {
+  const all = d.knowledge_map.all_nodes;
+  const subsystems = [...new Set(all.map(n => n.subsystem).filter(Boolean))].sort();
+  if (nodeSubsysFilter !== 'all' && !subsystems.includes(nodeSubsysFilter)) nodeSubsysFilter = 'all';
+  const counts = {all: all.length,
+    mastered: all.filter(n=>n.status==='mastered').length,
+    exploring: all.filter(n=>n.status==='exploring').length,
+    unknown: all.filter(n=>n.status==='unknown').length,
+    questioned: all.filter(n=>n.status==='questioned').length};
+
+  const filtered = filterKnowledgeNodes(all, nodeFilter, nodeSubsysFilter, nodeSearchQuery);
+
+  let html = `<div class="nodes-toolbar">
+    ${['all','mastered','exploring','unknown','questioned'].map(s =>
+      `<button class="filter-btn ${nodeFilter===s?'active':''}" onclick="nodeFilter='${s}';renderNodes(currentData)">
+        ${s==='all'?'全部':s==='mastered'?'已掌握':s==='exploring'?'探索中':s==='questioned'?'有疑问':'未知'} ${counts[s]}
+      </button>`).join('')}
+    <div class="nodes-search-box">
+      <input type="text" id="nodes-search-input" value="${escapeHtmlAttr(nodeSearchQuery)}"
+        placeholder="搜索节点、子系统、note、内部文档…"
+        oninput="nodeSearchQuery=this.value;renderNodes(currentData)" autocomplete="off">
+    </div>
+  </div>
+  <div class="filter-bar">
+    <button class="filter-btn ${nodeSubsysFilter==='all'?'active':''}" onclick="nodeSubsysFilter='all';renderNodes(currentData)">全部子系统</button>
+    ${subsystems.map(s => {
+      const cnt = all.filter(n => n.subsystem === s).length;
+      return `<button class="filter-btn ${nodeSubsysFilter===s?'active':''}" onclick="nodeSubsysFilter='${escapeDocsJs(s)}';renderNodes(currentData)">${s} ${cnt}</button>`;
+    }).join('')}
+    ${nodeSearchQuery ? `<button class="filter-btn" style="opacity:.75" onclick="nodeSearchQuery='';renderNodes(currentData)">清除搜索</button>` : ''}
+    <span style="color:var(--muted);font-size:12px;margin-left:auto">当前显示 ${filtered.length} / ${all.length}</span>
+  </div>
+  <table class="node-table">
+    <thead><tr><th>名称</th><th>类型</th><th>子系统</th><th>状态</th><th>置信度</th><th>摘要</th><th>跳转</th><th>内部文档</th></tr></thead>
+    <tbody>`;
+
+  filtered.forEach(n => {
+    const confColor = n.confidence >= 80 ? 'var(--mastered)' : n.confidence >= 40 ? 'var(--exploring)' : 'var(--unknown)';
+    const docs = findNodeDocs(n, d.learn_docs || {});
+    const docAction = docs.length
+      ? `<button class="node-action" onclick="openNodeDoc('${escapeDocsJs(n.subsystem)}','${escapeDocsJs(docs[0].path)}')">笔记 ${docs.length}</button>`
+      : `<button class="node-action node-action-muted" onclick="searchDocsForNode('${escapeDocsJs(n.subsystem)}','${escapeDocsJs(n.name)}')">搜笔记</button>`;
+    const docLink = n.internal_doc && n.internal_doc !== '-'
+      ? (n.internal_doc.includes('http')
+          ? `<a class="has-link" href="${n.internal_doc.match(/\((https?[^)]+)\)/)?.[1]||'#'}" target="_blank">文档</a>`
+          : `<span style="color:var(--muted);font-size:11px">${n.internal_doc.slice(0,20)}</span>`)
+      : '<span style="color:var(--border)">—</span>';
+
+    html += `<tr>
+      <td><code style="font-size:12px">${n.name}</code></td>
+      <td style="color:var(--muted)">${n.type}</td>
+      <td style="color:var(--muted);font-size:12px">${n.subsystem}</td>
+      <td><span class="status-badge status-${n.status}">${n.status}</span></td>
+      <td>
+        <span class="conf-bar"><span class="conf-fill" style="width:${n.confidence}%;background:${confColor}"></span></span>
+        <span style="color:var(--muted);font-size:11px">${n.confidence}</span>
+      </td>
+      <td><div class="node-note" title="${escapeHtmlAttr(n.note || '')}">${escapeDocsHtml(n.note || '—')}</div></td>
+      <td>
+        ${docAction}
+        <button class="node-action node-action-muted" onclick="openNodeGraph('${escapeDocsJs(n.name)}')">图谱</button>
+      </td>
+      <td>${docLink}</td>
+    </tr>`;
+  });
+
+  if (!filtered.length) {
+    html += `<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:24px">没有匹配节点</td></tr>`;
+  }
+
+  html += `</tbody></table>`;
+  document.getElementById('nodes').innerHTML = html;
+  const input = document.getElementById('nodes-search-input');
+  if (input) {
+    input.focus();
+    input.setSelectionRange(input.value.length, input.value.length);
+  }
+}
+
+function activateDashboardTab(tabName) {
+  document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+  document.querySelectorAll('.panel').forEach(x => x.classList.remove('active'));
+  const tab = document.querySelector(`.tab[data-tab="${tabName}"]`);
+  const panel = document.getElementById(tabName);
+  if (tab) tab.classList.add('active');
+  if (panel) panel.classList.add('active');
+  updateQuickNoteSource();
+}
+
+function openNodeDoc(subsystem, path) {
+  currentDocsSubsystem = subsystem;
+  currentDocsFile = path;
+  docsPickerOpen = false;
+  activateDashboardTab('docs');
+  renderDocs(currentData);
+}
+
+function searchDocsForNode(subsystem, nodeName) {
+  currentDocsSubsystem = subsystem;
+  currentDocsFile = null;
+  docsPickerOpen = false;
+  activateDashboardTab('docs');
+  renderDocs(currentData);
+  const input = document.getElementById('docs-search-input');
+  if (input) {
+    input.value = nodeName;
+    updateDocsSearchSuggestions(nodeName);
+    input.focus();
+  }
+}
+
+function openNodeGraph(nodeName) {
+  activateDashboardTab('graph');
+  graphMode = 'dep';
+  focusedNodeName = nodeName;
+  egoMode = false;
+  renderGraph(currentData);
+  const btnDep = document.getElementById('btn-dep');
+  const btnCall = document.getElementById('btn-call');
+  if (btnDep && btnCall) {
+    btnDep.classList.add('active');
+    btnCall.classList.remove('active');
+  }
+  setTimeout(() => focusNode(nodeName), 50);
+}
+
+// ── 开放问题 ──
+function renderQuestions(d) {
+  const q = d.questions.questions;
+  const labelMap = { CRITICAL:'CRITICAL 阻塞', MEDIUM:'MEDIUM 重要', LOW:'LOW 感兴趣' };
+  const colorVar = { CRITICAL:'critical', MEDIUM:'medium', LOW:'low' };
+
+  let html = '';
+  ['CRITICAL','MEDIUM','LOW'].forEach(p => {
+    const items = q[p] || [];
+    html += `<div class="q-section q-${p.toLowerCase()}">
+      <div class="q-title">${labelMap[p]} <span class="q-count">${items.length}</span></div>`;
+    if (!items.length) { html += `<div class="empty" style="padding:8px 0;text-align:left;color:var(--muted)">暂无</div>`; }
+    items.forEach(item => {
+      html += `<div class="q-card">
+        <div class="q-id">${item.id}</div>
+        <div class="q-text">${item.title || '（无描述）'}</div>
+        ${item.date ? `<div class="q-date">提出于 ${item.date}</div>` : ''}
+      </div>`;
+    });
+    html += `</div>`;
+  });
+
+  if (q.resolved && q.resolved.length) {
+    html += `<div class="q-section"><div class="q-title" style="color:var(--muted)">已解答 <span class="q-count" style="background:rgba(139,148,158,.2);color:var(--muted)">${q.resolved.length}</span></div>`;
+    q.resolved.forEach(item => {
+      html += `<div class="q-card" style="opacity:.6"><div class="q-id">${item.id} ✓</div><div class="q-text">${item.title || ''}</div></div>`;
+    });
+    html += `</div>`;
+  }
+
+  document.getElementById('questions').innerHTML = html;
+}
+
+// ── 随时记收件箱 ──
+function quickNotesCounts() {
+  const counts = (quickNotesData && quickNotesData.counts) || {};
+  return {
+    total: Number(counts.total) || 0,
+    '问题': Number(counts['问题']) || 0,
+    '笔记': Number(counts['笔记']) || 0,
+    '待整理': Number(counts['待整理']) || 0,
+  };
+}
+
+function filteredQuickNotes() {
+  const notes = (quickNotesData && quickNotesData.notes) || [];
+  if (quickNotesFilter === '全部') return notes;
+  return notes.filter(note => note && note.type === quickNotesFilter);
+}
+
+function setQuickNotesFilter(type) {
+  quickNotesFilter = type || '全部';
+  renderQuickNotes();
+}
+
+async function loadQuickNotes() {
+  try {
+    const res = await fetch('/api/quick-notes');
+    const data = await res.json();
+    if (!res.ok) throw new Error(data?.error || '随时记加载失败');
+    quickNotesData = data || { notes: [], counts: { total: 0, '问题': 0, '笔记': 0, '待整理': 0 } };
+    renderQuickNotes();
+    renderQuickNotesRecent();
+  } catch (err) {
+    const panel = document.getElementById('quicknotes');
+    if (panel) panel.innerHTML = '<div class="docs-empty">随时记加载失败</div>';
+    const recent = document.getElementById('quick-note-recent-list');
+    if (recent) recent.innerHTML = '<div class="quick-note-recent-empty">加载失败</div>';
+  }
+}
+
+function renderQuickNotesRecent() {
+  const list = document.getElementById('quick-note-recent-list');
+  if (!list) return;
+  const notes = ((quickNotesData && quickNotesData.notes) || []).slice(0, 3);
+  if (!notes.length) {
+    list.innerHTML = '<div class="quick-note-recent-empty">暂无记录</div>';
+    return;
+  }
+  list.innerHTML = notes.map(note => {
+    const dateTime = [note.date, note.time].filter(Boolean).join(' ');
+    return `<div class="quick-note-recent-item">
+      <div class="quick-note-recent-meta">
+        <span>${escapeHtml(note.type || '笔记')}</span>
+        ${dateTime ? `<span>${escapeHtml(dateTime)}</span>` : ''}
+      </div>
+      <div class="quick-note-recent-content">${escapeHtml(note.content || '')}</div>
+    </div>`;
+  }).join('');
+}
+
+function openQuickNotesTab() {
+  closeQuickNote();
+  activateDashboardTab('quicknotes');
+  renderQuickNotes();
+}
+
+function renderQuickNotes() {
+  const panel = document.getElementById('quicknotes');
+  if (!panel) return;
+
+  const counts = quickNotesCounts();
+  const notes = filteredQuickNotes();
+  const filters = ['全部', '问题', '笔记', '待整理'];
+  const countFor = type => type === '全部' ? counts.total : counts[type];
+
+  let html = `<div class="quicknotes-header">
+    <div>
+      <div class="quicknotes-title">随时记</div>
+      <div class="quicknotes-counts">共 ${counts.total} 条 · 问题 ${counts['问题']} · 笔记 ${counts['笔记']} · 待整理 ${counts['待整理']}</div>
+    </div>
+    <div class="quicknotes-counts">当前 ${notes.length} 条</div>
+  </div>
+  <div class="quicknotes-filters">
+    ${filters.map(type => `<button class="quicknotes-filter-btn ${quickNotesFilter === type ? 'active' : ''}" type="button" onclick="setQuickNotesFilter('${type}')">${type} ${countFor(type)}</button>`).join('')}
+  </div>`;
+
+  if (!notes.length) {
+    html += '<div class="docs-empty">暂无随时记</div>';
+  } else {
+    html += '<div class="quicknotes-list">';
+    notes.forEach(note => {
+      const dateTime = [note.date, note.time].filter(Boolean).join(' ');
+      html += `<div class="quicknotes-item">
+        <div class="quicknotes-meta">
+          <span class="quicknotes-type">${escapeHtml(note.type)}</span>
+          ${dateTime ? `<span>${escapeHtml(dateTime)}</span>` : ''}
+          ${note.source ? `<span>${escapeHtml(note.source)}</span>` : ''}
+          ${note.status ? `<span>${escapeHtml(note.status)}</span>` : ''}
+        </div>
+        <div class="quicknotes-content">${escapeHtml(note.content)}</div>
+        ${note.file ? `<div class="quicknotes-file">${escapeHtml(note.file)}</div>` : ''}
+      </div>`;
+    });
+    html += '</div>';
+  }
+
+  panel.innerHTML = html;
+}
+
+// ── 问答日志 ──
+let qaSubsysFilter = 'all';
+function renderQaLog(d) {
+  const entries = d.qa_log || [];
+  const panel = document.getElementById('qalog');
+  if (!panel) return;
+
+  if (!entries.length) {
+    panel.innerHTML = '<div class="docs-empty">暂无问答记录<br><span style="font-size:11px">memory/{subsystem}/qa-log.md 有内容后会显示在这里</span></div>';
+    return;
+  }
+
+  const subsystems = [...new Set(entries.map(e => e.subsystem))].sort();
+  if (qaSubsysFilter !== 'all' && !subsystems.includes(qaSubsysFilter)) qaSubsysFilter = 'all';
+  const filtered = qaSubsysFilter === 'all' ? entries : entries.filter(e => e.subsystem === qaSubsysFilter);
+
+  let html = `<div class="filter-bar">
+    <button class="filter-btn ${qaSubsysFilter==='all'?'active':''}" onclick="qaSubsysFilter='all';renderQaLog(currentData)">全部 ${entries.length}</button>
+    ${subsystems.map(s => {
+      const cnt = entries.filter(e => e.subsystem === s).length;
+      return `<button class="filter-btn ${qaSubsysFilter===s?'active':''}" onclick="qaSubsysFilter='${s}';renderQaLog(currentData)">${s} ${cnt}</button>`;
+    }).join('')}
+  </div>`;
+
+  filtered.forEach(e => {
+    html += `<div class="qa-card">
+      <div class="qa-meta">
+        <span class="qa-subsys-tag">${e.subsystem}</span>
+        <span>${e.id}</span>
+        ${e.group ? `<span class="qa-group">· ${e.group}</span>` : ''}
+        ${e.date ? `<span style="margin-left:auto">${e.date}</span>` : ''}
+      </div>
+      <div class="qa-question">${e.question || e.title || '（无描述）'}</div>
+      ${e.background ? `<div class="qa-field-label">背景</div><div class="qa-field-value">${e.background}</div>` : ''}
+      ${e.conclusion ? `<div class="qa-field-label">结论</div><div class="qa-field-value">${e.conclusion}</div>` : ''}
+      ${e.source ? `<div class="qa-field-label">来源</div><div class="qa-field-value" style="color:var(--muted)">${e.source}</div>` : ''}
+    </div>`;
+  });
+
+  panel.innerHTML = html;
+}
+
+// ── 学习日志 ──
+function renderJournal(d) {
+  const entries = d.journal || [];
+  if (!entries.length) {
+    document.getElementById('journal').innerHTML = '<div class="empty">暂无学习记录</div>';
+    return;
+  }
+
+  let html = '';
+  entries.forEach(e => {
+    const items = e.content.filter(l => l.startsWith('-') || (!l.includes('**') && l.trim()));
+    html += `<div class="journal-entry">
+      <div class="journal-date">${e.date}</div>
+      <div class="journal-content">`;
+    if (items.length) {
+      html += `<div class="section-label">学习内容</div><ul>`;
+      items.slice(0,6).forEach(l => { html += `<li>${l.replace(/^-\s*/,'').replace(/\*\*/g,'')}</li>`; });
+      html += `</ul>`;
+    }
+    if (e.changes && e.changes.length) {
+      html += `<div class="section-label" style="margin-top:8px">状态变化</div><ul>`;
+      e.changes.forEach(l => { html += `<li>${l}</li>`; });
+      html += `</ul>`;
+    }
+    if (e.next && e.next.length) {
+      html += `<div class="section-label" style="margin-top:8px">下次建议</div><ul>`;
+      e.next.forEach(l => { html += `<li>${l}</li>`; });
+      html += `</ul>`;
+    }
+    html += `</div></div>`;
+  });
+
+  document.getElementById('journal').innerHTML = html;
+}
+
+// ── 学习文档 ──
+let currentDocsSubsystem = null;
+let currentDocsFile = null;
+let docsPickerOpen = false;
+let docsHeadingNavOpen = true;
+
+function renderDocs(d) {
+  const learn = d.learn_docs || {};
+  const subsystems = Object.keys(learn);
+  const panel = document.getElementById('docs');
+
+  if (!subsystems.length) {
+    panel.innerHTML = '<div class="docs-empty">learn/ 目录下暂无 .md 文件<br><span style="font-size:11px">分析函数后 kernel-code-analyzer 会自动写入</span></div>';
+    return;
+  }
+
+  // 保持选中状态（数据刷新时不重置）
+  if (!currentDocsSubsystem || !learn[currentDocsSubsystem]) {
+    currentDocsSubsystem = subsystems[0];
+  }
+  const files = learn[currentDocsSubsystem] || [];
+  if (!currentDocsFile || !files.find(f => f.path === currentDocsFile)) {
+    currentDocsFile = files[0]?.path || null;
+  }
+
+  // 子系统切换按钮
+  let html = `<div class="docs-toolbar">`;
+  subsystems.forEach(s => {
+    const active = s === currentDocsSubsystem ? 'active' : '';
+    const cnt = learn[s].length;
+    html += `<button class="filter-btn ${active}"
+      onclick="currentDocsSubsystem='${s}';currentDocsFile=null;renderDocs(currentData)">
+      ${s}<span class="docs-file-label">${cnt} 个文件</span></button>`;
+  });
+  html += `<div class="docs-search-box">
+      <input type="text" id="docs-search-input" placeholder="搜索函数名，看哪些文档提到过… (Enter 跳转)" autocomplete="off">
+      <div class="search-suggestions" id="docs-search-suggestions"></div>
+    </div>`;
+  html += `</div>`;
+
+  // 文件选择弹窗
+  if (files.length > 0) {
+    const fileTree = buildDocsFileTree(files);
+    const currentFileObj = files.find(f => f.path === currentDocsFile) || files[0];
+    const currentLabel = currentFileObj ? formatDocsOptionLabel(currentFileObj) : '选择文档';
+    const currentHeadingItems = currentFileObj ? buildDocsHeadingItems(currentFileObj.content) : [];
+    html += `<div class="docs-toolbar" style="margin-top:-4px">
+      <div class="docs-picker">
+        <button class="docs-picker-button" type="button" onclick="toggleDocsPicker(event)">
+          <span class="docs-picker-current">${escapeDocsHtml(currentLabel)}</span>
+          <span class="docs-picker-caret">${docsPickerOpen ? '▲' : '▼'}</span>
+        </button>
+        ${docsPickerOpen ? `<div class="docs-picker-menu">${renderDocsTree(fileTree, 0)}</div>` : ''}
+      </div>
+      ${currentHeadingItems.length ? `<button class="filter-btn" onclick="toggleDocsHeadingNav()">${docsHeadingNavOpen ? '隐藏标题' : '显示标题'}</button>` : ''}
+    </div>`;
+  }
+
+  // Markdown 渲染
+  const fileObj = files.find(f => f.path === currentDocsFile) || files[0];
+  if (fileObj) {
+    const headingItems = buildDocsHeadingItems(fileObj.content);
+    const rendered = addDocsHeadingAnchors(renderDocsMermaid(marked.parse(fileObj.content)), headingItems);
+    const showHeadingNav = docsHeadingNavOpen && headingItems.length;
+    html += `<div class="docs-reader ${showHeadingNav ? '' : 'docs-reader-full'}">
+      <div class="docs-content">${rendered}</div>
+      ${showHeadingNav ? renderDocsHeadingNav(headingItems) : ''}
+    </div>`;
+  }
+
+  panel.innerHTML = html;
+  initDocsSearch();
+  renderDocsMermaidDiagrams(panel);
+  updateQuickNoteSource();
+}
+
+function renderDocsMermaid(renderedHtml) {
+  return String(renderedHtml || '').replace(
+    /<pre><code class="language-mermaid">([\s\S]*?)<\/code><\/pre>/g,
+    (_full, source) => `<figure class="mermaid-figure" data-mode="diagram">
+      <div class="mermaid-mode-switch" aria-label="Mermaid 显示方式">
+        <button type="button" class="active" data-mermaid-mode="diagram">图示</button>
+        <button type="button" data-mermaid-mode="source">源码</button>
+      </div>
+      <div class="mermaid-diagram-pane">
+        <div class="mermaid-toolbar" aria-label="Mermaid 图控制">
+          <button type="button" title="放大" data-mermaid-action="zoom-in">+</button>
+          <button type="button" title="缩小" data-mermaid-action="zoom-out">-</button>
+          <button type="button" title="重置" data-mermaid-action="reset">↺</button>
+          <button type="button" title="全覆盖显示" data-mermaid-action="fullscreen">⛶</button>
+        </div>
+        <div class="mermaid-viewport"><div class="mermaid">${normalizeDocsMermaidSource(source)}</div></div>
+      </div>
+      <pre class="mermaid-source-pane"><code>${escapeDocsHtml(source)}</code></pre>
+    </figure>`
+  );
+}
+
+function normalizeDocsMermaidSource(source) {
+  return String(source || '').replace(/\\n/g, '<br/>');
+}
+
+function renderDocsMermaidDiagrams(root) {
+  if (!root) return;
+
+  initDocsMermaidModeSwitches(root);
+
+  if (typeof mermaid === 'undefined') return;
+
+  const nodes = root.querySelectorAll('.docs-content .mermaid');
+  if (!nodes.length) return;
+
+  Promise.resolve(mermaid.run({ nodes })).then(() => {
+    initDocsMermaidInteractions(root);
+  }).catch(err => {
+    console.error('Mermaid render failed', err);
+  });
+}
+
+function initDocsMermaidInteractions(root) {
+  if (typeof d3 === 'undefined' || !root) return;
+
+  root.querySelectorAll('.mermaid-figure').forEach(figure => {
+    if (figure.dataset.mermaidReady === 'true') return;
+
+    const viewport = figure.querySelector('.mermaid-viewport');
+    const svg = viewport?.querySelector('svg');
+    if (!viewport || !svg) return;
+
+    const canvas = wrapDocsMermaidSvg(svg, 'mermaid-canvas');
+    const baseViewBox = getDocsMermaidSvgViewBox(svg);
+    ensureDocsMermaidSvgViewBox(svg, baseViewBox);
+    fitDocsMermaidViewportToAspectRatio(viewport, baseViewBox);
+    observeDocsMermaidViewport(figure, viewport, baseViewBox);
+    normalizeDocsMermaidSvgSize(svg, canvas);
+    figure.dataset.mermaidReady = 'true';
+    const selection = d3.select(viewport);
+    const zoom = d3.zoom()
+      .scaleExtent([0.35, 5])
+      .constrain(transform => toDocsMermaidD3Transform(clampDocsMermaidTransform(
+        transform,
+        getDocsMermaidViewportSize(viewport),
+        getDocsMermaidCanvasSize(canvas, baseViewBox)
+      )))
+      .on('zoom', event => {
+        applyDocsMermaidViewBox(svg, baseViewBox, event.transform);
+      });
+
+    selection.call(zoom);
+    figure.__mermaidZoom = { selection, zoom };
+
+    figure.querySelectorAll('[data-mermaid-action]').forEach(button => {
+      button.addEventListener('click', ev => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        const action = button.dataset.mermaidAction;
+        if (action === 'zoom-in') selection.transition().duration(120).call(zoom.scaleBy, 1.2);
+        if (action === 'zoom-out') selection.transition().duration(120).call(zoom.scaleBy, 0.8);
+        if (action === 'reset') selection.transition().duration(120).call(zoom.transform, d3.zoomIdentity);
+        if (action === 'fullscreen') openDocsMermaidOverlay(figure);
+      });
+    });
+
+    initDocsMermaidModeSwitches(figure);
+  });
+}
+
+function initDocsMermaidModeSwitches(root) {
+  if (!root) return;
+  const figures = [];
+  if (String(root.className || '').split(/\s+/).includes('mermaid-figure')) figures.push(root);
+  root.querySelectorAll('.mermaid-figure').forEach(figure => figures.push(figure));
+
+  figures.forEach(figure => {
+    if (figure.dataset.mermaidModeReady === 'true') return;
+    figure.dataset.mermaidModeReady = 'true';
+    figure.querySelectorAll('[data-mermaid-mode]').forEach(button => {
+      button.addEventListener('click', ev => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        setDocsMermaidMode(figure, button.dataset.mermaidMode);
+      });
+    });
+  });
+}
+
+function setDocsMermaidMode(figure, mode) {
+  const nextMode = mode === 'source' ? 'source' : 'diagram';
+  figure.dataset.mode = nextMode;
+  figure.querySelectorAll('[data-mermaid-mode]').forEach(button => {
+    button.className = button.dataset.mermaidMode === nextMode ? 'active' : '';
+  });
+}
+
+function wrapDocsMermaidSvg(svg, className) {
+  const currentParent = svg.parentElement;
+  if (currentParent?.classList?.contains(className)) return currentParent;
+
+  const canvas = document.createElement('div');
+  canvas.className = className;
+  currentParent.insertBefore(canvas, svg);
+  canvas.appendChild(svg);
+  return canvas;
+}
+
+function getDocsMermaidViewportSize(viewport) {
+  return {
+    width: viewport.clientWidth || 1,
+    height: viewport.clientHeight || 1,
+  };
+}
+
+function getDocsMermaidCanvasSize(canvas, fallbackViewBox) {
+  const rect = canvas.getBoundingClientRect?.();
+  return {
+    width: fallbackViewBox?.width || canvas.scrollWidth || rect?.width || 1,
+    height: fallbackViewBox?.height || canvas.scrollHeight || rect?.height || 1,
+  };
+}
+
+function getDocsMermaidSvgViewBox(svg) {
+  const raw = String(svg.getAttribute('viewBox') || '').trim().split(/\s+/).map(Number);
+  if (raw.length === 4 && raw.every(Number.isFinite)) {
+    return { x: raw[0], y: raw[1], width: raw[2], height: raw[3] };
+  }
+
+  const width = parseFloat(svg.getAttribute('width')) || svg.clientWidth || svg.scrollWidth || 1;
+  const height = parseFloat(svg.getAttribute('height')) || svg.clientHeight || svg.scrollHeight || 1;
+  return { x: 0, y: 0, width, height };
+}
+
+function applyDocsMermaidViewBox(svg, baseViewBox, transform) {
+  const k = transform.k || 1;
+  const width = baseViewBox.width / k;
+  const height = baseViewBox.height / k;
+  const x = baseViewBox.x - (transform.x || 0) / k;
+  const y = baseViewBox.y - (transform.y || 0) / k;
+  svg.setAttribute('viewBox', `${formatDocsMermaidNumber(x)} ${formatDocsMermaidNumber(y)} ${formatDocsMermaidNumber(width)} ${formatDocsMermaidNumber(height)}`);
+}
+
+function ensureDocsMermaidSvgViewBox(svg, viewBox) {
+  if (String(svg.getAttribute('viewBox') || '').trim()) return;
+  svg.setAttribute('viewBox', `${formatDocsMermaidNumber(viewBox.x)} ${formatDocsMermaidNumber(viewBox.y)} ${formatDocsMermaidNumber(viewBox.width)} ${formatDocsMermaidNumber(viewBox.height)}`);
+}
+
+function normalizeDocsMermaidSvgSize(svg, canvas) {
+  canvas.style.width = '100%';
+  canvas.style.height = '100%';
+  svg.style.width = '100%';
+  svg.style.height = '100%';
+  svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+}
+
+function fitDocsMermaidViewportToAspectRatio(viewport, viewBox) {
+  const contentWidth = viewport.clientWidth || 1;
+  const aspectHeight = contentWidth * (viewBox.height / Math.max(1, viewBox.width));
+  const height = Math.max(160, Math.min(620, Math.round(aspectHeight)));
+  viewport.style.height = `${height}px`;
+  viewport.style.minHeight = '0px';
+}
+
+function observeDocsMermaidViewport(figure, viewport, viewBox) {
+  if (typeof ResizeObserver === 'undefined') return;
+  const observer = new ResizeObserver(() => fitDocsMermaidViewportToAspectRatio(viewport, viewBox));
+  observer.observe(viewport);
+  figure.__mermaidResizeObserver = observer;
+}
+
+function formatDocsMermaidNumber(value) {
+  return Number(value.toFixed(3)).toString();
+}
+
+function clampDocsMermaidTransform(transform, viewportSize, canvasSize) {
+  const k = transform.k || 1;
+  const visibleMargin = 120;
+  const scaledWidth = Math.max(1, canvasSize.width * k);
+  const scaledHeight = Math.max(1, canvasSize.height * k);
+  const maxX = Math.min(visibleMargin, viewportSize.width - visibleMargin);
+  const maxY = Math.min(visibleMargin, viewportSize.height - visibleMargin);
+  const minX = Math.min(viewportSize.width - visibleMargin, visibleMargin - scaledWidth);
+  const minY = Math.min(viewportSize.height - visibleMargin, visibleMargin - scaledHeight);
+
+  return {
+    x: Math.max(minX, Math.min(maxX, transform.x || 0)),
+    y: Math.max(minY, Math.min(maxY, transform.y || 0)),
+    k,
+  };
+}
+
+function toDocsMermaidD3Transform(transform) {
+  return d3.zoomIdentity.translate(transform.x, transform.y).scale(transform.k);
+}
+
+function openDocsMermaidOverlay(figure) {
+  const sourceSvg = figure?.querySelector('svg');
+  if (typeof d3 === 'undefined' || !sourceSvg) return;
+
+  const overlay = ensureDocsMermaidOverlay();
+  const viewport = overlay.querySelector('.mermaid-overlay-viewport');
+  viewport.innerHTML = '';
+
+  const svg = sourceSvg.cloneNode(true);
+  svg.removeAttribute('style');
+  svg.style.transformOrigin = '0 0';
+  const baseViewBox = getDocsMermaidSvgViewBox(svg);
+  ensureDocsMermaidSvgViewBox(svg, baseViewBox);
+  const canvas = document.createElement('div');
+  canvas.className = 'mermaid-overlay-canvas';
+  canvas.appendChild(svg);
+  normalizeDocsMermaidSvgSize(svg, canvas);
+  viewport.appendChild(canvas);
+  overlay.classList.add('show');
+  document.body.classList.add('mermaid-overlay-open');
+
+  const selection = d3.select(viewport);
+  const zoom = d3.zoom()
+    .scaleExtent([0.35, 8])
+    .constrain(transform => toDocsMermaidD3Transform(clampDocsMermaidTransform(
+      transform,
+      getDocsMermaidViewportSize(viewport),
+      getDocsMermaidCanvasSize(canvas, baseViewBox)
+    )))
+    .on('zoom', event => {
+      applyDocsMermaidViewBox(svg, baseViewBox, event.transform);
+    });
+  selection.call(zoom);
+
+  overlay.querySelectorAll('[data-mermaid-overlay-action]').forEach(button => {
+    button.onclick = ev => {
+      ev.preventDefault();
+      const action = button.dataset.mermaidOverlayAction;
+      if (action === 'zoom-in') selection.transition().duration(120).call(zoom.scaleBy, 1.2);
+      if (action === 'zoom-out') selection.transition().duration(120).call(zoom.scaleBy, 0.8);
+      if (action === 'reset') selection.transition().duration(120).call(zoom.transform, d3.zoomIdentity);
+      if (action === 'close') closeDocsMermaidOverlay();
+    };
+  });
+
+  if (!docsMermaidOverlayKeyHandler) {
+    docsMermaidOverlayKeyHandler = ev => {
+      if (ev.key === 'Escape') closeDocsMermaidOverlay();
+    };
+    document.addEventListener('keydown', docsMermaidOverlayKeyHandler);
+  }
+}
+
+function ensureDocsMermaidOverlay() {
+  let overlay = document.getElementById('docs-mermaid-overlay');
+  if (overlay) return overlay;
+
+  overlay = document.createElement('div');
+  overlay.id = 'docs-mermaid-overlay';
+  overlay.className = 'mermaid-overlay';
+  overlay.innerHTML = `<div class="mermaid-overlay-panel" role="dialog" aria-label="Mermaid 全覆盖显示">
+    <div class="mermaid-overlay-toolbar" aria-label="Mermaid 全覆盖控制">
+      <button type="button" title="放大" data-mermaid-overlay-action="zoom-in">+</button>
+      <button type="button" title="缩小" data-mermaid-overlay-action="zoom-out">-</button>
+      <button type="button" title="重置" data-mermaid-overlay-action="reset">↺</button>
+      <button type="button" title="关闭" data-mermaid-overlay-action="close">×</button>
+    </div>
+    <div class="mermaid-overlay-viewport"></div>
+  </div>`;
+  overlay.addEventListener('click', ev => {
+    if (ev.target === overlay) closeDocsMermaidOverlay();
+  });
+  document.body.appendChild(overlay);
+  return overlay;
+}
+
+function closeDocsMermaidOverlay() {
+  const overlay = document.getElementById('docs-mermaid-overlay');
+  if (!overlay) return;
+  overlay.classList.remove('show');
+  document.body.classList.remove('mermaid-overlay-open');
+  const viewport = overlay.querySelector('.mermaid-overlay-viewport');
+  if (viewport) viewport.innerHTML = '';
+}
+
+function formatDocsOptionLabel(file) {
+  const parts = String(file.path || '').split('/').filter(Boolean);
+  if (parts.length <= 2) return file.name;
+  const relativeParts = parts.slice(1);
+  relativeParts[relativeParts.length - 1] = file.name;
+  return relativeParts.join(' / ');
+}
+
+function buildDocsFileTree(files) {
+  const root = { dirs: {}, files: [] };
+  const sortedFiles = [...files].sort((a, b) =>
+    formatDocsOptionLabel(a).localeCompare(formatDocsOptionLabel(b))
+  );
+  sortedFiles.forEach(file => {
+    const pathParts = String(file.path || '').split('/').filter(Boolean);
+    const relativeParts = pathParts.slice(1);
+    const dirParts = relativeParts.slice(0, -1);
+    let node = root;
+    dirParts.forEach(dir => {
+      if (!node.dirs[dir]) node.dirs[dir] = { dirs: {}, files: [] };
+      node = node.dirs[dir];
+    });
+    node.files.push(file);
+  });
+  return root;
+}
+
+function renderDocsTree(node, depth) {
+  let html = '';
+  node.files.forEach(file => {
+    const active = file.path === currentDocsFile ? 'active' : '';
+    html += `<button class="docs-tree-file ${active}" type="button" style="--depth:${depth}" onclick="selectDocsFile('${escapeDocsJs(file.path)}')">
+      <span class="docs-tree-file-name">${escapeDocsHtml(file.name)}</span>
+    </button>`;
+  });
+  Object.entries(node.dirs).forEach(([dir, child]) => {
+    html += `<div class="docs-tree-dir" style="--depth:${depth}">${escapeDocsHtml(dir)}</div>`;
+    html += renderDocsTree(child, depth + 1);
+  });
+  return html;
+}
+
+function toggleDocsPicker(ev) {
+  if (ev) ev.stopPropagation();
+  docsPickerOpen = !docsPickerOpen;
+  renderDocs(currentData);
+}
+
+function selectDocsFile(path) {
+  currentDocsFile = path;
+  updateQuickNoteSource();
+  docsPickerOpen = false;
+  renderDocs(currentData);
+}
+
+function toggleDocsHeadingNav() {
+  docsHeadingNavOpen = !docsHeadingNavOpen;
+  renderDocs(currentData);
+}
+
+function buildDocsHeadingItems(markdown) {
+  const items = [];
+  let inFence = false;
+  let fenceMarker = '';
+
+  String(markdown || '').split(/\r?\n/).forEach(line => {
+    const fence = line.match(/^\s*(```+|~~~+)/);
+    if (fence) {
+      const marker = fence[1][0];
+      if (!inFence) {
+        inFence = true;
+        fenceMarker = marker;
+      } else if (marker === fenceMarker) {
+        inFence = false;
+        fenceMarker = '';
+      }
+      return;
+    }
+    if (inFence) return;
+
+    const match = line.match(/^(#{1,3})\s+(.+?)\s*#*\s*$/);
+    if (!match) return;
+
+    let text = match[2]
+      .replace(/<[^>]*>/g, '')
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+      .replace(/[`*_~]/g, '')
+      .trim();
+    if (!text) return;
+
+    const slug = text.toLowerCase()
+      .replace(/[^a-z0-9\u4e00-\u9fff]+/g, '-')
+      .replace(/^-+|-+$/g, '') || 'section';
+    items.push({
+      level: match[1].length,
+      text,
+      id: `doc-heading-${items.length + 1}-${slug}`,
+    });
+  });
+
+  return items;
+}
+
+function addDocsHeadingAnchors(renderedHtml, headingItems) {
+  let idx = 0;
+  return String(renderedHtml || '').replace(/<h([1-3])([^>]*)>([\s\S]*?)<\/h\1>/g, (full, level, attrs, body) => {
+    const item = headingItems[idx++];
+    if (!item) return full;
+    const nextAttrs = /\sid=/.test(attrs) ? attrs : `${attrs} id="${item.id}"`;
+    return `<h${level}${nextAttrs}>${body}</h${level}>`;
+  });
+}
+
+function renderDocsHeadingNav(items) {
+  return `<aside class="docs-heading-nav" aria-label="当前文档标题导览">
+    <div class="docs-heading-nav-head">
+      <span>本文标题</span>
+      <button class="docs-heading-close" type="button" title="关闭标题导览" onclick="toggleDocsHeadingNav()">×</button>
+    </div>
+    <nav class="docs-heading-list">
+      ${items.map(item => `<a class="docs-heading-item" style="--level:${item.level}" href="#${item.id}" title="${escapeDocsHtml(item.text)}">${escapeDocsHtml(item.text)}</a>`).join('')}
+    </nav>
+  </aside>`;
+}
+
+// ── 学习文档全文搜索：按函数名找哪些文档提到/详解过 ──
+function initDocsSearch() {
+  const input = document.getElementById('docs-search-input');
+  if (!input) return;
+  // renderDocs 每次都重建整个 panel，输入框是全新 DOM 节点，直接绑定即可（无需去重判断）
+  input.addEventListener('input', () => {
+    docsPickerOpen = false;
+    updateDocsSearchSuggestions(input.value.trim());
+  });
+  input.addEventListener('keydown', ev => {
+    const suggBox = document.getElementById('docs-search-suggestions');
+    if (ev.key === 'Enter') {
+      const first = suggBox && suggBox.querySelector('.docs-search-item');
+      if (first) first.click();
+    } else if (ev.key === 'Escape') {
+      if (suggBox) suggBox.classList.remove('show');
+      input.blur();
+    }
+  });
+  document.addEventListener('click', ev => {
+    const suggBox = document.getElementById('docs-search-suggestions');
+    if (suggBox && !ev.target.closest('.docs-search-box')) suggBox.classList.remove('show');
+    if (docsPickerOpen && !ev.target.closest('.docs-picker')) {
+      docsPickerOpen = false;
+      renderDocs(currentData);
+    }
+  });
+}
+
+function updateDocsSearchSuggestions(query) {
+  const suggBox = document.getElementById('docs-search-suggestions');
+  if (!suggBox) return;
+  if (!query) { suggBox.classList.remove('show'); suggBox.innerHTML = ''; return; }
+
+  const learn = (currentData && currentData.learn_docs) || {};
+  const q = query.toLowerCase();
+  const results = [];
+
+  for (const [subsys, files] of Object.entries(learn)) {
+    for (const f of files) {
+      const nameHit = f.name.toLowerCase().includes(q);
+      const contentLower = f.content.toLowerCase();
+      let matchCount = 0;
+      let idx = contentLower.indexOf(q);
+      const firstIdx = idx;
+      while (idx !== -1) {
+        matchCount++;
+        idx = contentLower.indexOf(q, idx + q.length);
+      }
+      if (!nameHit && matchCount === 0) continue;
+      results.push({ subsys, file: f, nameHit, matchCount, firstIdx });
+    }
+  }
+
+  if (!results.length) {
+    suggBox.innerHTML = `<div class="search-empty">没有文档提到过「${escapeDocsHtml(query)}」</div>`;
+    suggBox.classList.add('show');
+    return;
+  }
+
+  // 排序：标题命中优先，其次按正文命中次数（越多说明详细介绍过，而不只是提了一句）
+  results.sort((a, b) => {
+    if (a.nameHit !== b.nameHit) return a.nameHit ? -1 : 1;
+    return b.matchCount - a.matchCount;
+  });
+
+  suggBox.innerHTML = results.slice(0, 30).map(r => {
+    const snippet = r.matchCount > 0 ? buildDocsSnippet(r.file.content, r.firstIdx, query) : '';
+    const metaText = r.nameHit
+      ? '标题命中'
+      : `正文提及 ${r.matchCount} 处`;
+    return `<div class="docs-search-item" onclick="jumpToDocsSearchResult('${r.subsys}','${r.file.path.replace(/'/g,"\\'")}')">
+      <div class="dsi-head"><span class="dsi-name">${escapeDocsHtml(r.file.name)}</span>
+        <span class="dsi-meta">${r.subsys} · ${metaText}</span></div>
+      ${snippet ? `<div class="dsi-snippet">${snippet}</div>` : ''}
+    </div>`;
+  }).join('');
+  suggBox.classList.add('show');
+}
+
+function buildDocsSnippet(content, matchIdx, query) {
+  const radius = 40;
+  const start = Math.max(0, matchIdx - radius);
+  const end = Math.min(content.length, matchIdx + query.length + radius);
+  let snippet = content.slice(start, end).replace(/\n/g, ' ');
+  if (start > 0) snippet = '…' + snippet;
+  if (end < content.length) snippet += '…';
+  const escaped = escapeDocsHtml(snippet);
+  const re = new RegExp(escapeDocsHtml(query).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'ig');
+  return escaped.replace(re, m => `<mark>${m}</mark>`);
+}
+
+function escapeHtml(s) {
+  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function escapeDocsHtml(s) {
+  return escapeHtml(s);
+}
+
+function escapeHtmlAttr(s) {
+  return escapeDocsHtml(String(s || '')).replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
+function escapeDocsJs(s) {
+  return String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+}
+
+function jumpToDocsSearchResult(subsys, path) {
+  currentDocsSubsystem = subsys;
+  currentDocsFile = path;
+  docsPickerOpen = false;
+  renderDocs(currentData);
+}
+
+let quickNoteType = '问题';
+let quickNoteToastTimer = null;
+
+function toggleQuickNote() {
+  const panel = document.getElementById('quick-note-panel');
+  if (!panel) return;
+  const willOpen = !panel.classList.contains('open');
+  panel.classList.toggle('open', willOpen);
+  panel.setAttribute('aria-hidden', willOpen ? 'false' : 'true');
+  updateQuickNoteSource();
+  if (willOpen) {
+    const error = document.getElementById('quick-note-error');
+    if (error) error.textContent = '';
+    const textarea = document.getElementById('quick-note-content');
+    if (textarea) textarea.focus();
+  }
+}
+
+function closeQuickNote() {
+  const panel = document.getElementById('quick-note-panel');
+  if (!panel) return;
+  panel.classList.remove('open');
+  panel.setAttribute('aria-hidden', 'true');
+  const error = document.getElementById('quick-note-error');
+  if (error) error.textContent = '';
+}
+
+function setQuickNoteType(type) {
+  quickNoteType = type;
+  document.querySelectorAll('.quick-note-type').forEach(btn => {
+    const active = btn.textContent.trim() === type;
+    btn.classList.toggle('active', active);
+    btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+  });
+}
+
+function getQuickNoteSource() {
+  const activeTab = document.querySelector('.tab.active');
+  const tabId = activeTab?.dataset?.tab || 'dashboard';
+  if (tabId === 'docs' && currentDocsFile) return `docs · ${currentDocsFile}`;
+  return tabId || 'dashboard';
+}
+
+function updateQuickNoteSource() {
+  const el = document.getElementById('quick-note-source');
+  if (el) el.textContent = getQuickNoteSource();
+}
+
+function buildQuickNotePayload(type, content) {
+  return {
+    type,
+    content: String(content || '').trim(),
+    source: getQuickNoteSource(),
+  };
+}
+
+async function saveQuickNote() {
+  const textarea = document.getElementById('quick-note-content');
+  const error = document.getElementById('quick-note-error');
+  const saveBtn = document.getElementById('quick-note-save');
+  if (!textarea) return;
+
+  const payload = buildQuickNotePayload(quickNoteType, textarea.value);
+  if (!payload.content) {
+    if (error) error.textContent = '请输入要保存的内容';
+    textarea.focus();
+    return;
+  }
+
+  if (error) error.textContent = '';
+  if (saveBtn) saveBtn.disabled = true;
+  try {
+    const res = await fetch('/api/quick-notes', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    let data = null;
+    try {
+      data = await res.json();
+    } catch (jsonErr) {
+      data = null;
+    }
+    if (!res.ok) throw new Error(data?.error || '保存失败，草稿已保留');
+    textarea.value = '';
+    closeQuickNote();
+    showQuickNoteToast('已保存', 'success');
+    await loadQuickNotes();
+  } catch (err) {
+    if (error) error.textContent = err?.message || '保存失败，草稿已保留';
+    showQuickNoteToast('保存失败', 'error');
+  } finally {
+    if (saveBtn) saveBtn.disabled = false;
+  }
+}
+
+function showQuickNoteToast(message, kind) {
+  const toast = document.getElementById('quick-note-toast');
+  if (!toast) return;
+  toast.textContent = message;
+  toast.className = `quick-note-toast show ${kind || ''}`.trim();
+  if (quickNoteToastTimer) clearTimeout(quickNoteToastTimer);
+  quickNoteToastTimer = setTimeout(() => {
+    toast.classList.remove('show');
+  }, 2200);
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,40 @@
+{
+  "mcpServers": {
+    "kernel-graph": {
+      "type": "stdio",
+      "command": "python3",
+      "args": [
+        "/absolute/path/to/kernel-graph/mcp_server.py",
+        "--db",
+        "/absolute/path/to/kernel-graph/kernel.db"
+      ]
+    }
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/check-kernel-module.sh"
+          },
+          {
+            "type": "command",
+            "command": ".claude/hooks/capture-reminder.sh"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "prompt",
+            "prompt": "Review this session. If it produced new kernel analysis, ensure kernel-learning-capture has updated the knowledge state, then append a concise entry to .claude/memory/learning-journal.md. Do not update the journal when no learning artifact or state changed."
+          }
+        ]
+      }
+    ]
+  }
+}
