@@ -18,7 +18,7 @@ description: >
 - `MODULE_NAME`：显示名称，如 "kprobe 探针机制"
 - `MODULE_KEY`：目录键名（小写下划线），如 `kprobe`
 
-### Step 1：并行查询 kernel-graph + Confluence
+### Step 1：并行查询 kernel-graph-linux7.2rc6
 
 **并行执行：**
 
@@ -28,17 +28,9 @@ kernel-graph:
   find_definition(入口函数)           → 确认源码路径（用于 Step 3/4）
   call_chain_down(入口函数, depth=2)  → 获取调用树（用于 Step 3/4）
   find_struct(核心结构体)             → 获取关键结构体（用于 Step 4）
-
-Confluence:
-  confluence_search("{MODULE_NAME} 内核")
-  confluence_search("{MODULE_KEY}")
 ```
 
-Confluence 搜索结果：
-- 找到相关页面 → 记录标题，Step 2 执行后用 `upsert_node.sh` 补写 internal_doc 列
-- 无结果 → 跳过
 
-将查询结果暂存，用于后续步骤传参。
 
 ### Step 2：初始化 memory 和 learn 目录
 
@@ -54,13 +46,6 @@ Confluence 搜索结果：
 - `learn/{MODULE_KEY}/_index.md` — Obsidian 目录页
 
 同时精确更新 `memory/MEMORY.md` 三处（子系统列表、当前学习焦点、知识状态）。
-
-若 Confluence 搜到相关页面，脚本执行后为每个入口函数补写 internal_doc：
-
-```bash
-.claude/scripts/upsert_node.sh \
-  {MODULE_KEY} {入口函数} function unknown 0 - "{Confluence 标题}" --section "核心层"
-```
 
 ### Step 3：更新 CLAUDE.md
 
@@ -94,7 +79,7 @@ Confluence 搜索结果：
 
 - 输出目标：`learn/{MODULE_KEY}/{MODULE_KEY}_read_guide.md`（只含大框架路线图，不含函数深度解析）
 - 骨架图写入：`memory/{MODULE_KEY}/dep-graph.md` + `knowledge.md`
-- 若 Step 1 的 Confluence 搜索命中架构综述类页面，且其中含贯穿全模块的领域术语，该 skill 会额外生成 `learn/{MODULE_KEY}/{MODULE_KEY}_concepts.md`（基础概念 primer）——这一步由 kernel-reading-guide 自身的触发条件判断，本 skill 不单独控制
+- 调用kernel-concept-mapper这个skill额外生成 `learn/{MODULE_KEY}/{MODULE_KEY}_concepts.md`（基础概念 primer）——这一步由 kernel-reading-guide 自身的触发条件判断，本 skill 不单独控制
 - skill 执行完后继续 Step 6
 
 ### Step 6：输出完成摘要

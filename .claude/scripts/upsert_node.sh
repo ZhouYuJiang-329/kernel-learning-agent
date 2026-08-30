@@ -17,6 +17,18 @@
 
 set -euo pipefail
 
+# Python 解释器探测（Windows 的 python3 常是无效 stub，实际解释器是 python）
+PYTHON="${PYTHON:-python3}"
+if ! command -v "$PYTHON" >/dev/null 2>&1 || ! "$PYTHON" -c 'import sys' >/dev/null 2>&1; then
+    PYTHON="python"
+fi
+if ! command -v "$PYTHON" >/dev/null 2>&1 || ! "$PYTHON" -c 'import sys' >/dev/null 2>&1; then
+    echo "error: no working Python found (tried \$PYTHON, python3, python)" >&2
+    exit 1
+fi
+# 强制 UTF-8 模式（Windows 默认 GBK 会导致中文文件读写乱码）
+export PYTHONUTF8=1
+
 MEMORY_DIR="$(dirname "$0")/../memory"
 DATE=$(date +%Y-%m-%d)
 
@@ -84,7 +96,7 @@ if grep -q "^| ${NAME} |" "$KM_FILE" 2>/dev/null; then
     ESCAPED_ROW=$(printf '%s\n' "$NEW_ROW" | sed 's/[[\.*^$()+?{|]/\\&/g')
 
     # 使用 Python 做替换（比 sed 处理特殊字符更可靠）
-    python3 - "$KM_FILE" "$NAME" "$NEW_ROW" <<'PYEOF'
+    "$PYTHON" - "$KM_FILE" "$NAME" "$NEW_ROW" <<'PYEOF'
 import sys
 filepath, name, new_row = sys.argv[1], sys.argv[2], sys.argv[3]
 lines = open(filepath).readlines()
@@ -103,7 +115,7 @@ PYEOF
     echo "updated: ${SUBSYSTEM}/${NAME} → ${STATUS}(${CONFIDENCE})"
 else
     # 不存在 → 追加到指定节末尾，或全文最后一个表格行后
-    python3 - "$KM_FILE" "$NEW_ROW" "$SECTION" <<'PYEOF'
+    "$PYTHON" - "$KM_FILE" "$NEW_ROW" "$SECTION" <<'PYEOF'
 import sys
 filepath, new_row, section = sys.argv[1], sys.argv[2], sys.argv[3]
 lines = open(filepath).readlines()

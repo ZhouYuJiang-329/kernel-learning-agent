@@ -16,6 +16,18 @@
 
 set -euo pipefail
 
+# Python 解释器探测（Windows 的 python3 常是无效 stub，实际解释器是 python）
+PYTHON="${PYTHON:-python3}"
+if ! command -v "$PYTHON" >/dev/null 2>&1 || ! "$PYTHON" -c 'import sys' >/dev/null 2>&1; then
+    PYTHON="python"
+fi
+if ! command -v "$PYTHON" >/dev/null 2>&1 || ! "$PYTHON" -c 'import sys' >/dev/null 2>&1; then
+    echo "error: no working Python found (tried \$PYTHON, python3, python)" >&2
+    exit 1
+fi
+# 强制 UTF-8 模式（Windows 默认 GBK 会导致中文文件读写乱码）
+export PYTHONUTF8=1
+
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 AGENTS_DIR="${SCRIPT_DIR}/../../../../.claude/agents"
 
@@ -43,7 +55,7 @@ if [[ -f "$AGENT_FILE" ]]; then
     exit 2
 fi
 
-python3 - "$AGENT_FILE" "$MODULE_KEY" "$MODULE_NAME" "$SOURCE_PATH" "$CALL_TREE" "$STRUCTS" <<'PYEOF'
+"$PYTHON" - "$AGENT_FILE" "$MODULE_KEY" "$MODULE_NAME" "$SOURCE_PATH" "$CALL_TREE" "$STRUCTS" <<'PYEOF'
 import sys
 
 agent_file  = sys.argv[1]
