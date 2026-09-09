@@ -76,10 +76,24 @@
 
 | 名称 | 类型 | 状态 | 置信度 | 笔记 | 内部文档 | 更新日期 |
 |---|---|---|---:|---|---|---|
-| enqueue_task_rt | function | unknown | 0 | - | - | 2026-08-28 |
+| enqueue_task_rt | function | mastered | 85 | learn/sched/enqueue_task_rt.md | - | 2026-09-07 |
+| enqueue_rt_entity | function | mastered | 85 | learn/sched/enqueue_task_rt.md | - | 2026-09-07 |
+| __enqueue_rt_entity | function | mastered | 85 | learn/sched/enqueue_task_rt.md | - | 2026-09-07 |
+| enqueue_pushable_task | function | mastered | 85 | learn/sched/enqueue_pushable_task.md | - | 2026-09-07 |
 | pick_next_task_rt | function | unknown | 0 | - | - | 2026-08-28 |
-| pick_next_rt_entity | function | unknown | 0 | - | - | 2026-08-28 |
-| update_curr_rt | function | unknown | 0 | - | - | 2026-08-28 |
+| pick_next_rt_entity | function | mastered | 85 | learn/sched/pick_task_rt.md | - | 2026-09-07 |
+| update_curr_rt | function | mastered | 85 | learn/sched/update_curr_rt.md | - | 2026-09-07 |
+| dequeue_task_rt | function | mastered | 85 | learn/sched/dequeue_task_rt.md | - | 2026-09-07 |
+| dequeue_rt_entity | function | mastered | 85 | learn/sched/dequeue_task_rt.md | - | 2026-09-07 |
+| dequeue_rt_stack | function | mastered | 85 | learn/sched/dequeue_task_rt.md | - | 2026-09-07 |
+| __dequeue_rt_entity | function | mastered | 85 | learn/sched/dequeue_task_rt.md | - | 2026-09-07 |
+| dequeue_pushable_task | function | mastered | 85 | learn/sched/enqueue_pushable_task.md | - | 2026-09-07 |
+| pick_task_rt | function | mastered | 85 | learn/sched/pick_task_rt.md | - | 2026-09-07 |
+| _pick_next_task_rt | function | mastered | 85 | learn/sched/pick_task_rt.md | - | 2026-09-07 |
+| set_next_task_rt | function | mastered | 85 | learn/sched/set_next_task_rt.md | - | 2026-09-07 |
+| put_prev_task_rt | function | mastered | 85 | learn/sched/set_next_task_rt.md | - | 2026-09-07 |
+| inc_rt_prio | function | mastered | 85 | learn/sched/inc_rt_prio.md | - | 2026-09-07 |
+| dec_rt_prio | function | mastered | 85 | learn/sched/inc_rt_prio.md | - | 2026-09-07 |
 
 ## DL
 
@@ -103,10 +117,10 @@
 
 | 名称 | 类型 | 状态 | 置信度 | 笔记 | 内部文档 | 更新日期 |
 |---|---|---|---:|---|---|---|
-| sched_setscheduler | function | unknown | 0 | - | - | 2026-08-28 |
+| sched_setscheduler | function | exploring | 2 | learn/sched/sched_syscalls.md | - | 2026-09-02 |
 | sched_setscheduler_nocheck | function | unknown | 0 | - | - | 2026-08-28 |
-| __sched_setscheduler | function | unknown | 0 | - | - | 2026-08-28 |
-| sched_setattr | function | unknown | 0 | - | - | 2026-08-28 |
+| __sched_setscheduler | function | exploring | 2 | learn/sched/sched_syscalls.md | - | 2026-09-02 |
+| sched_setattr | function | exploring | 2 | learn/sched/sched_syscalls.md | - | 2026-09-02 |
 | set_user_nice | function | unknown | 0 | - | - | 2026-08-28 |
 | normal_prio | function | unknown | 0 | - | - | 2026-08-28 |
 | effective_prio | function | unknown | 0 | - | - | 2026-08-28 |
@@ -141,11 +155,11 @@
 | task_struct | struct | unknown | 0 | learn/sched/sched_read_guide.md | - | 2026-08-28 |
 | sched_class | struct | unknown | 0 | learn/sched/sched_read_guide.md | - | 2026-08-28 |
 | sched_entity | struct | unknown | 0 | learn/sched/sched_read_guide.md | - | 2026-08-28 |
-| sched_rt_entity | struct | unknown | 0 | - | - | 2026-08-28 |
+| sched_rt_entity | struct | exploring | 60 | learn/sched/enqueue_task_rt.md | - | 2026-09-07 |
 | sched_dl_entity | struct | unknown | 0 | - | - | 2026-08-28 |
 | rq | struct | unknown | 0 | learn/sched/sched_read_guide.md | - | 2026-08-28 |
 | cfs_rq | struct | unknown | 0 | learn/sched/sched_read_guide.md | - | 2026-08-28 |
-| rt_rq | struct | unknown | 0 | - | - | 2026-08-28 |
+| rt_rq | struct | exploring | 60 | learn/sched/enqueue_task_rt.md | - | 2026-09-07 |
 | dl_rq | struct | unknown | 0 | - | - | 2026-08-28 |
-| rt_prio_array | struct | unknown | 0 | - | - | 2026-08-28 |
+| rt_prio_array | struct | mastered | 85 | learn/sched/enqueue_task_rt.md | - | 2026-09-07 |
 | sched_attr | struct | unknown | 0 | - | - | 2026-08-28 |
