@@ -135,6 +135,7 @@ Linux 内存管理不是一条单独路径，而是由“启动期发现物理�
 - [`do_anonymous_page_do_fault_do_wp_page.md`](do_anonymous_page_do_fault_do_wp_page.md)——PTE末端的匿名首次缺页、文件/共享后备分派，以及写保护、复用与COW事务。
 - [`dup_mmap.md`](dup_mmap.md)——fork时复制 VMA、逐级复制普通页表、批量处理 PTE，并建立父子写保护与后续 COW约束。
 - [`do_mprotect_pkey.md`](do_mprotect_pkey.md)——mprotect/pkey入口、VMA拆分合并、页表权限总入口与present/softleaf PTE权限变换。
+- [`unmap_region.md`](unmap_region.md)——局部unmap的叶子zap、rmap/TLB拆除、VMA反向索引解绑与多级空页表释放。
 - [`mm_struct_vm_area_struct_vm_fault.md`](mm_struct_vm_area_struct_vm_fault.md)——`mm_struct`、VMA、fault 上下文及普通页表 fault 分派。
 - [`do_mmap.md`](do_mmap.md)——mmap 建立 VMA、`MAP_FIXED` 覆盖和 munmap 拆除事务；可作为页表销毁阶段的 VMA 前置知识。
 
@@ -369,7 +370,7 @@ Linux 内存管理不是一条单独路径，而是由“启动期发现物理�
 
 ## 已有学习笔记
 
-当前已有 [`page_zone_pglist_data.md`](page_zone_pglist_data.md)、[`mm_struct_vm_area_struct_vm_fault.md`](mm_struct_vm_area_struct_vm_fault.md)、[`kmem_cache_address_space_lruvec_scan_control.md`](kmem_cache_address_space_lruvec_scan_control.md) 和 [`compact_control_mem_cgroup.md`](compact_control_mem_cgroup.md) 四份结构体深度笔记；启动期内存主线另有 [`memblock_add.md`](memblock_add.md)、[`memblock_alloc_try_nid.md`](memblock_alloc_try_nid.md) 和 [`free_area_init.md`](free_area_init.md) 三份函数深度笔记；[`do_mmap.md`](do_mmap.md) 已覆盖 mmap/VMA 建立与 munmap 事务，[`mm_alloc.md`](mm_alloc.md) 已覆盖地址空间对象和根页表的创建/释放，[`dup_mm.md`](dup_mm.md) 已覆盖 fork 地址空间复制、COW 分工和 x86 根页表配置细节，[`dup_mmap.md`](dup_mmap.md) 已深入覆盖 VMA与普通页表逐级复制，[`do_user_addr_fault.md`](do_user_addr_fault.md) 已覆盖普通页表fault从x86入口到PTE分派，[`do_anonymous_page_do_fault_do_wp_page.md`](do_anonymous_page_do_fault_do_wp_page.md) 已继续覆盖匿名/文件首次填充和写保护COW，[`do_mprotect_pkey.md`](do_mprotect_pkey.md) 已覆盖VMA与现有页表权限修改。页表生命周期其余函数仍只列阅读路线，后续应由 `kernel-code-analyzer` 分阶段输出独立深度笔记，不在本指南复制逐行解释或调用链。
+当前已有 [`page_zone_pglist_data.md`](page_zone_pglist_data.md)、[`mm_struct_vm_area_struct_vm_fault.md`](mm_struct_vm_area_struct_vm_fault.md)、[`kmem_cache_address_space_lruvec_scan_control.md`](kmem_cache_address_space_lruvec_scan_control.md) 和 [`compact_control_mem_cgroup.md`](compact_control_mem_cgroup.md) 四份结构体深度笔记；启动期内存主线另有 [`memblock_add.md`](memblock_add.md)、[`memblock_alloc_try_nid.md`](memblock_alloc_try_nid.md) 和 [`free_area_init.md`](free_area_init.md) 三份函数深度笔记；[`do_mmap.md`](do_mmap.md) 已覆盖 mmap/VMA 建立与 munmap 事务，[`mm_alloc.md`](mm_alloc.md) 已覆盖地址空间对象和根页表的创建/释放，[`dup_mm.md`](dup_mm.md) 已覆盖 fork 地址空间复制、COW 分工和 x86 根页表配置细节，[`dup_mmap.md`](dup_mmap.md) 已深入覆盖 VMA与普通页表逐级复制，[`do_user_addr_fault.md`](do_user_addr_fault.md) 已覆盖普通页表fault从x86入口到PTE分派，[`do_anonymous_page_do_fault_do_wp_page.md`](do_anonymous_page_do_fault_do_wp_page.md) 已继续覆盖匿名/文件首次填充和写保护COW，[`do_mprotect_pkey.md`](do_mprotect_pkey.md) 已覆盖VMA与现有页表权限修改，[`unmap_region.md`](unmap_region.md) 已覆盖局部叶子撤销和空页表层级释放。页表生命周期其余函数仍只列阅读路线，后续应由 `kernel-code-analyzer` 分阶段输出独立深度笔记，不在本指南复制逐行解释或调用链。
 
 ## 建议的第一轮深读清单
 

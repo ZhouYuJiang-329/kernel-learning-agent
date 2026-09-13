@@ -6,7 +6,7 @@
 |---|---|---:|---:|---:|---:|
 | 示例模块 | [example/](example/knowledge.md) | 1 | 1 | 1 | 0 |
 | 调度器 | [sched/](sched/knowledge.md) | 18 | 5 | 78 | 0 |
-| 内存管理 | [mm/](mm/knowledge.md) | 43 | 0 | 39 | 44.57 |
+| 内存管理 | [mm/](mm/knowledge.md) | 48 | 0 | 39 | 46.90 |
 
 ## 当前学习焦点
 
@@ -21,6 +21,7 @@
 - **PTE 末端填页与 COW**：已完成 `do_anonymous_page`、`do_fault`、`do_wp_page` 的逐段分析，区分共享零页/匿名 folio、文件私有首次写 COW、共享后备写入、匿名页独占复用和事务式页面复制。
 - **fork VMA与普通页表复制**：已完成 `dup_mmap`、`copy_page_range`、`copy_p4d_range`、`copy_pud_range`、`copy_pmd_range`、`copy_pte_range` 的逐段分析，串起 Maple Tree克隆、逐级页表复制、huge分流、PTE批处理、父子写保护与 pinned匿名页预复制。
 - **mprotect权限变换**：已完成 `do_mprotect_pkey`、`mprotect_fixup`、`change_protection`、`change_pte_range` 的逐段分析，串起用户权限校验、VMA拆分合并、commit记账、huge分流以及present/softleaf PTE权限变换。
+- **局部 unmap 与页表层级释放**：已完成 `unmap_region`、`unmap_vmas`、`__zap_vma_range`、`free_pgtables`、`free_pgd_range` 的逐段分析，串起叶子 zap、rmap/RSS/folio 引用撤销、MMU notifier、TLB 延迟释放、VMA 反向索引解绑与空页表回收。
 - **缓存与回收主数据结构**：已完成 `kmem_cache`、`address_space`、`lruvec`、`scan_control` 的逐字段分析，串起 SLUB 对象缓存、文件页缓存、LRU 归属和回收决策主线。
 - **压缩与资源控制主数据结构**：已完成 `compact_control`、`mem_cgroup` 的逐字段分析，串起直接/后台压缩、memcg charge、定向回收、high 节流、max/OOM 与离线销毁主线。
 - **启动期物理内存交接**：已完成 `memblock_add()`、`memblock_alloc_try_nid()`、`free_area_init()` 的逐行分析，区分物理区间登记、早期预留分配以及 node/zone 正式初始化三个阶段。
@@ -39,11 +40,11 @@
 
 ## 最近 5 个分析
 
-- `dup_mm/x86 pgd_alloc/x86 pgd_free` (mm, 2026-09-08)
 - `do_user_addr_fault/handle_mm_fault/__handle_mm_fault/__pte_alloc/handle_pte_fault` (mm, 2026-09-08)
 - `do_anonymous_page/do_fault/do_wp_page` (mm, 2026-09-08)
 - `dup_mmap/copy_page_range/copy_p4d_range/copy_pud_range/copy_pmd_range/copy_pte_range` (mm, 2026-09-09)
 - `do_mprotect_pkey/mprotect_fixup/change_protection/change_pte_range` (mm, 2026-09-09)
+- `unmap_region/unmap_vmas/__zap_vma_range/free_pgtables/free_pgd_range` (mm, 2026-09-09)
 
 ## 开放问题统计
 

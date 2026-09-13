@@ -60,6 +60,11 @@
 | change_pte_range | function | mastered | 85 | learn/mm/do_mprotect_pkey.md | - | 2026-09-09 |
 | pgd_alloc | function | mastered | 85 | learn/mm/dup_mm.md | - | 2026-09-08 |
 | pgd_free | function | mastered | 85 | learn/mm/dup_mm.md | - | 2026-09-08 |
+| unmap_region | function | mastered | 85 | learn/mm/unmap_region.md | - | 2026-09-09 |
+| unmap_vmas | function | mastered | 85 | learn/mm/unmap_region.md | - | 2026-09-09 |
+| __zap_vma_range | function | mastered | 85 | learn/mm/unmap_region.md | - | 2026-09-09 |
+| free_pgtables | function | mastered | 85 | learn/mm/unmap_region.md | - | 2026-09-09 |
+| free_pgd_range | function | mastered | 85 | learn/mm/unmap_region.md | - | 2026-09-09 |
 
 ## 缓存与回收数据结构
 

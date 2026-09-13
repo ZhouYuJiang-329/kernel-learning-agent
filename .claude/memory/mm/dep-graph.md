@@ -243,4 +243,13 @@ pgd_free
   ├── pgd_dtor（从 pgd_list 注销根页表）
   ├── paravirt_pgd_free（通知半虚拟化后端释放）
   └── _pgd_free（析构并释放根页表物理页）
+
+unmap_region
+  ├── unmap_vmas（遍历待删除 VMA 并撤销叶子映射）
+  │   └── __zap_vma_range（按单个 VMA 范围清除页表项、rmap 与页面引用）
+  │       ├── __unmap_hugepage_range（拆除 HugeTLB 映射）
+  │       └── zap_p4d_range（进入普通页表逐级 zap 路径）
+  └── free_pgtables（解绑 VMA 反向索引并释放空页表层级）
+      └── free_pgd_range（在 floor/ceiling 约束内自 PGD 向下释放页表页）
+          └── free_p4d_range（遍历并释放 P4D 以下的完整空页表范围）
 ```
